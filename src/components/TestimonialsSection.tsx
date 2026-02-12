@@ -36,7 +36,7 @@ const TestimonialsSection = () => {
                   <span className="text-accent font-black text-lg">AE</span>
                 </div>
                 <div>
-                  <h4 className="font-heading font-black text-lg text-primary tracking-tight">Amr ElSelimy</h4>
+                  <h4 className="font-heading font-black text-lg text-primary tracking-tight">Yomna Ahmed</h4>
                   <p className="text-[10px] text-accent font-black uppercase tracking-widest">Floki Systems</p>
                 </div>
               </div>
