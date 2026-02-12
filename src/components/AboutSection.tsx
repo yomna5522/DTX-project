@@ -1,14 +1,16 @@
 import { Sparkles, Eye, Layers, Heart, Play } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import aboutImage from "@/assets/about-printing.jpg";
 
 const features = [
-  { icon: Sparkles, title: "Lasting Brilliance", desc: "Our Global Textile Printing Technology ensures your designs come to life with vibrant, long-lasting colors that maintain their intensity over time.", color: "bg-[#F5BB00]" },
-  { icon: Eye, title: "Sharp Details", desc: "We utilize advanced printing techniques to capture every intricate detail of your designs, ensuring sharp lines and flawless reproduction.", color: "bg-[#EC1C24]" },
-  { icon: Layers, title: "Diverse Selection", desc: "We offer a wide variety of high-quality fabrics to meet your specific needs, ensuring the perfect match for your project and desired outcome.", color: "bg-[#002B5B]" },
-  { icon: Heart, title: "Your Vision", desc: "Your satisfaction is our priority. We provide personalized service and expert guidance to bring your unique vision to life.", color: "bg-[#D63384]" },
+  { icon: Sparkles, titleKey: "lastingBrilliance", descKey: "lastingBrillianceDesc", color: "bg-[#F5BB00]" },
+  { icon: Eye, titleKey: "sharpDetails", descKey: "sharpDetailsDesc", color: "bg-[#EC1C24]" },
+  { icon: Layers, titleKey: "diverseSelection", descKey: "diverseSelectionDesc", color: "bg-[#002B5B]" },
+  { icon: Heart, titleKey: "yourVision", descKey: "yourVisionDesc", color: "bg-[#D63384]" },
 ];
 
 const AboutSection = () => {
+  const { t } = useTranslation();
   return (
     <section id="about" className="py-24 bg-white relative overflow-hidden">
       <div className="container mx-auto px-4 relative z-10">
@@ -20,10 +22,10 @@ const AboutSection = () => {
           </div>
           <div className="relative z-10">
             <p className="text-accent text-[11px] font-bold uppercase tracking-[0.4em] mb-4">
-              About Our Company
+              {t("about.aboutCompany")}
             </p>
             <h2 className="font-heading text-4xl md:text-5xl font-black text-primary tracking-tight">
-              Bring your ideas to life with DTX
+              {t("about.heading")}
             </h2>
           </div>
         </div>
@@ -39,7 +41,7 @@ const AboutSection = () => {
               <div className="absolute inset-0 bg-black/10"></div>
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-2xl ring-8 ring-white/20 transition-transform group-hover:scale-110 cursor-pointer">
-                  <Play className="h-6 w-6 text-accent fill-accent ml-1" />
+                  <Play className="h-6 w-6 text-accent fill-accent ml-1 rtl:mr-1 rtl:ml-0" />
                 </div>
               </div>
             </div>
@@ -47,9 +49,7 @@ const AboutSection = () => {
 
           <div>
             <p className="text-gray-500 leading-relaxed mb-6 text-sm">
-              DTX is a dedicated fabric printing company specializing in High Quality Digital 
-              textile printing on all types of fabrics. With years of experience and a passion 
-              for excellence, we transform your designs into masterpieces.
+              {t("about.intro")}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-10">
               {features.map((f, i) => (
@@ -59,10 +59,10 @@ const AboutSection = () => {
                   </div>
                   <div>
                     <h4 className="font-heading text-lg font-black text-primary mb-2 tracking-tight">
-                      {f.title}
+                      {t(`about.${f.titleKey}`)}
                     </h4>
                     <p className="text-gray-500 text-[13px] leading-relaxed">
-                      {f.desc}
+                      {t(`about.${f.descKey}`)}
                     </p>
                   </div>
                 </div>

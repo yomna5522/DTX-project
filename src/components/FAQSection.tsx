@@ -4,28 +4,18 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { useTranslation } from "react-i18next";
 import heroFabrics from "@/assets/hero-fabrics.jpg";
 
-const faqs = [
-  {
-    q: "What types of fabrics do you print on?",
-    a: "We offer sublimation printing on a wide variety of both Natural Fabrics like Cotton, Gabardine & Linen and also Synthetic fabrics including Chiffon, Satin, Voile & Polyester.",
-  },
-  {
-    q: "What is the minimum order quantity?",
-    a: "Our minimum order quantity varies depending on the specific project requirements. Please contact us for more information.",
-  },
-  {
-    q: "How long does it take to receive my order?",
-    a: "Turnaround times depend on the size and complexity of your order. We will provide you with an estimated delivery timeframe upon receiving your project details.",
-  },
-  {
-    q: "Do you provide free samples?",
-    a: "Yes, we can provide sample prints so you can evaluate our quality before placing a larger order. Contact us for details.",
-  },
-];
-
 const FAQSection = () => {
+  const { t } = useTranslation();
+  const faqs = [
+    { q: t("faq.q1"), a: t("faq.a1") },
+    { q: t("faq.q2"), a: t("faq.a2") },
+    { q: t("faq.q3"), a: t("faq.a3") },
+    { q: t("faq.q4"), a: t("faq.a4") },
+  ];
+
   return (
     <section id="faq" className="py-0 bg-primary overflow-hidden border-t border-white/5">
       <div className="flex flex-col lg:flex-row">
@@ -53,11 +43,11 @@ const FAQSection = () => {
             <div className="flex items-center gap-4 mb-6">
               <span className="w-12 h-0.5 bg-secondary rounded-full"></span>
               <p className="text-secondary text-[10px] font-bold uppercase tracking-[0.3em]">
-                FAQ
+                {t("faq.title")}
               </p>
             </div>
             <h2 className="font-heading text-4xl md:text-5xl font-black text-white mb-12 tracking-tight leading-tight">
-              Frequently Asked Questions
+              {t("faq.heading")}
             </h2>
 
             <Accordion type="single" collapsible className="w-full space-y-2">

@@ -1,26 +1,28 @@
 import { useState, useEffect } from "react";
 import { ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import heroPrinting from "@/assets/hero-printing.jpg";
 import heroFabrics from "@/assets/hero-fabrics.jpg";
 
-const slides = [
-  {
-    image: heroPrinting,
-    subtitle: "Welcome to DTX",
-    title: "VIBRANT",
-    description: "Experience the Brilliance of Digital Printing on Textiles both on Natural & Synthetic fabrics. Achieve vibrant colors bringing your designs to life.",
-  },
-  {
-    image: heroFabrics,
-    subtitle: "Welcome to DTX",
-    title: "BEST FABRICS",
-    description: "We offer a wide selection of high-quality synthetic and natural fabrics to suit your specific needs. Discover the ideal material for your next printing masterpiece.",
-  },
-];
-
 const HeroSection = () => {
+  const { t } = useTranslation();
   const [current, setCurrent] = useState(0);
+
+  const slides = [
+    {
+      image: heroPrinting,
+      subtitle: t("hero.subtitle"),
+      title: t("hero.slide1Title"),
+      description: t("hero.slide1Desc"),
+    },
+    {
+      image: heroFabrics,
+      subtitle: t("hero.subtitle"),
+      title: t("hero.slide2Title"),
+      description: t("hero.slide2Desc"),
+    },
+  ];
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -56,17 +58,17 @@ const HeroSection = () => {
               {slides[current].title}
             </h1>
             <p className="text-white/80 font-body text-base md:text-lg leading-relaxed mb-12 max-w-lg font-medium">
-              We transform your ideas into reality with precision and care. Explore the endless possibilities of sublimation printing.
+              {t("hero.tagline")}
             </p>
             <div className="flex flex-wrap gap-5">
               <Link to="/shop" className="group flex items-center bg-accent text-white font-black text-[10px] tracking-[0.2em] transition-all hover:bg-accent/90 shadow-xl shadow-accent/20 overflow-hidden">
-                <span className="px-8 py-4">SHOP NOW</span>
+                <span className="px-8 py-4">{t("hero.startOrder")}</span>
                 <div className="bg-white/10 px-4 py-4 transition-colors group-hover:bg-white/20">
                   <ArrowRight className="h-4 w-4" />
                 </div>
               </Link>
-              <Link to="/contact" className="group flex items-center bg-secondary text-primary font-black text-[10px] tracking-[0.2em] transition-all hover:bg-secondary/90 shadow-xl shadow-secondary/20 overflow-hidden">
-                <span className="px-8 py-4 uppercase">Contact Us</span>
+              <Link to="/services" className="group flex items-center bg-secondary text-primary font-black text-[10px] tracking-[0.2em] transition-all hover:bg-secondary/90 shadow-xl shadow-secondary/20 overflow-hidden">
+                <span className="px-8 py-4 uppercase">{t("hero.viewServices")}</span>
                 <div className="bg-white/20 px-4 py-4 transition-colors group-hover:bg-white/30">
                   <ArrowRight className="h-4 w-4 text-white" />
                 </div>

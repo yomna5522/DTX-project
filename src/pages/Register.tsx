@@ -1,21 +1,33 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, UserPlus, User, Mail, Lock } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import TopBar from "@/components/TopBar";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Register = () => {
+  const { t } = useTranslation();
   const [form, setForm] = useState({ name: "", email: "", password: "", confirmPassword: "" });
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
+  const { register } = useAuth();
+  const navigate = useNavigate();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
     if (form.password !== form.confirmPassword) {
-      alert("Passwords do not match!");
+      setError("Passwords do not match.");
       return;
     }
-    alert("Registration functionality coming soon!");
+    const result = register({ name: form.name, email: form.email, password: form.password });
+    if (result.success) {
+      navigate("/shop", { replace: true });
+    } else {
+      setError(result.error ?? "Registration failed.");
+    }
   };
 
   return (
@@ -37,18 +49,21 @@ const Register = () => {
       <div className="w-full max-w-md relative z-10">
         <div className="text-center mb-10">
           <h1 className="font-heading text-3xl font-black text-white tracking-tight">
-            CREATE ACCOUNT
+            {t("pages.register.title")}
           </h1>
-          <p className="text-white/60 text-sm mt-2 font-medium">Join the DTX community</p>
+          <p className="text-white/60 text-sm mt-2 font-medium">{t("pages.register.subtitle")}</p>
         </div>
 
         <div className="bg-white rounded-2xl p-10 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5)]">
           <form onSubmit={handleSubmit} className="space-y-5">
+            {error && (
+              <p className="text-destructive text-sm font-medium bg-destructive/10 py-2 px-3 rounded-lg">{error}</p>
+            )}
             <div className="space-y-2">
-              <label className="text-primary font-bold text-xs uppercase tracking-widest ml-1">Full Name</label>
+              <label className="text-primary font-bold text-xs uppercase tracking-widest ml-1 rtl:mr-1 rtl:ml-0">{t("pages.register.fullName")}</label>
               <div className="relative">
                 <input
-                  type="text" required placeholder="John Doe"
+                  type="text" required placeholder={t("pages.register.namePlaceholder")}
                   value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
                   className="w-full bg-[#F5F7F9] border-none py-4 px-6 rounded-lg text-sm focus:ring-1 focus:ring-accent transition-all pl-12"
                 />
@@ -57,7 +72,7 @@ const Register = () => {
             </div>
 
             <div className="space-y-2">
-              <label className="text-primary font-bold text-xs uppercase tracking-widest ml-1">Email Address</label>
+              <label className="text-primary font-bold text-xs uppercase tracking-widest ml-1 rtl:mr-1 rtl:ml-0">{t("pages.register.email")}</label>
               <div className="relative">
                 <input
                   type="email" required placeholder="your@email.com"
@@ -69,7 +84,7 @@ const Register = () => {
             </div>
 
             <div className="space-y-2">
-              <label className="text-primary font-bold text-xs uppercase tracking-widest ml-1">Password</label>
+              <label className="text-primary font-bold text-xs uppercase tracking-widest ml-1 rtl:mr-1 rtl:ml-0">{t("pages.register.password")}</label>
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"} required placeholder="••••••••"
@@ -88,7 +103,7 @@ const Register = () => {
             </div>
 
             <div className="space-y-2">
-              <label className="text-primary font-bold text-xs uppercase tracking-widest ml-1">Confirm Password</label>
+              <label className="text-primary font-bold text-xs uppercase tracking-widest ml-1 rtl:mr-1 rtl:ml-0">{t("pages.register.confirmPassword")}</label>
               <div className="relative">
                 <input
                   type="password" required placeholder="••••••••"
@@ -100,13 +115,13 @@ const Register = () => {
             </div>
 
             <button type="submit" className="w-full bg-accent text-white py-4 rounded-lg font-black text-xs tracking-[0.2em] uppercase hover:bg-accent/90 transition-all shadow-xl shadow-accent/20 flex items-center justify-center gap-3">
-              <UserPlus className="h-4 w-4" /> CREATE ACCOUNT
+              <UserPlus className="h-4 w-4" /> {t("pages.register.createAccount")}
             </button>
             
             <div className="pt-4 text-center">
               <p className="text-sm text-muted-foreground font-medium">
-                Already have an account?{" "}
-                <Link to="/login" className="text-accent font-bold hover:underline uppercase">Sign In</Link>
+                {t("pages.register.haveAccount")}{" "}
+                <Link to="/login" className="text-accent font-bold hover:underline uppercase">{t("pages.register.signIn")}</Link>
               </p>
             </div>
           </form>

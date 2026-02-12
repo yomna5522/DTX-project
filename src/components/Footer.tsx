@@ -1,13 +1,15 @@
 import { Facebook, Instagram, Linkedin, Twitter } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 const Footer = () => {
+  const { t } = useTranslation();
   return (
     <footer className="bg-white py-6 border-t border-gray-100">
       <div className="container mx-auto px-4">
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
           <p className="text-muted-foreground text-[13px] font-medium text-center md:text-left">
-            Copyright © 2024 DTX Factory. All Rights Reserved. 
-            <span className="text-accent ml-1">Powered by Floki Systems</span>
+            {t("footer.copyright")}
+            <span className="text-accent ml-1 rtl:mr-1 rtl:ml-0">{t("footer.poweredBy")}</span>
           </p>
           
           <div className="flex items-center gap-3">
