@@ -1,16 +1,21 @@
 import TopBar from "@/components/TopBar";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { MapPin, Mail, Phone, User, ArrowRight } from "lucide-react";
+import { MapPin, Mail, Phone, User, ArrowRight, CheckCircle } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import heroPrinting from "@/assets/hero-printing.jpg";
+import { contactApi } from "@/api/contact";
 
 const Contact = () => {
+  const { t } = useTranslation();
   const [form, setForm] = useState({ name: "", email: "", phone: "", message: "" });
+  const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    alert("Thank you! Your message has been sent.");
+    contactApi.submit(form);
+    setSubmitted(true);
     setForm({ name: "", email: "", phone: "", message: "" });
   };
 
@@ -23,7 +28,7 @@ const Contact = () => {
       <section className="bg-primary relative min-h-[300px] flex items-center overflow-hidden">
         <div className="container mx-auto px-4 relative z-10 py-16">
           <h1 className="font-heading text-6xl md:text-7xl font-black text-white uppercase tracking-tighter">
-            CONTACT US
+            {t("pages.contact.title")}
           </h1>
         </div>
         <div className="absolute right-0 top-0 h-full w-1/2 hidden md:block">
@@ -46,19 +51,17 @@ const Contact = () => {
               </span>
             </div>
             <p className="text-accent text-[11px] font-bold uppercase tracking-[0.3em] mb-4 relative z-10">
-              Get In Touch
+              {t("pages.contact.getInTouch")}
             </p>
             <h2 className="font-heading text-4xl md:text-5xl font-black text-primary relative z-10">
-              Question in Mind?
+              {t("pages.contact.questionInMind")}
             </h2>
           </div>
           <div className="grid lg:grid-cols-2 gap-20 items-start">
             {/* Left Side: Info */}
             <div className="relative pt-12">
               <p className="text-muted-foreground leading-relaxed mb-12 max-w-md">
-                Our team is ready to assist you with all your fabric printing inquiries. Reach out 
-                to us using the contact information below, and we'll be happy to answer your 
-                questions and discuss your project requirements.
+                {t("pages.contact.intro")}
               </p>
 
               <div className="space-y-10">
@@ -67,7 +70,7 @@ const Contact = () => {
                     <MapPin className="h-6 w-6" />
                   </div>
                   <div>
-                    <h4 className="font-heading text-xl font-bold text-primary mb-1">Location</h4>
+                    <h4 className="font-heading text-xl font-bold text-primary mb-1">{t("pages.contact.location")}</h4>
                     <p className="text-muted-foreground text-sm">871 Industrial Area, New Cairo</p>
                   </div>
                 </div>
@@ -77,7 +80,7 @@ const Contact = () => {
                     <Mail className="h-6 w-6" />
                   </div>
                   <div>
-                    <h4 className="font-heading text-xl font-bold text-primary mb-1">Email</h4>
+                    <h4 className="font-heading text-xl font-bold text-primary mb-1">{t("pages.contact.email")}</h4>
                     <p className="text-muted-foreground text-sm">support@dtxegypt.com</p>
                   </div>
                 </div>
@@ -87,7 +90,7 @@ const Contact = () => {
                     <Phone className="h-6 w-6" />
                   </div>
                   <div>
-                    <h4 className="font-heading text-xl font-bold text-primary mb-1">Phone</h4>
+                    <h4 className="font-heading text-xl font-bold text-primary mb-1">{t("pages.contact.phone")}</h4>
                     <p className="text-muted-foreground text-sm">+20 108 062 5987</p>
                   </div>
                 </div>
@@ -96,12 +99,28 @@ const Contact = () => {
 
             {/* Right Side: Form */}
             <div className="bg-white pt-12">
+              {submitted ? (
+                <div className="flex flex-col items-center gap-4 p-8 bg-green-50 border border-green-200 rounded-lg">
+                  <CheckCircle className="h-14 w-14 text-green-600" />
+                  <h3 className="font-heading text-xl font-bold text-primary">{t("pages.contact.messageSent")}</h3>
+                  <p className="text-muted-foreground text-sm text-center">
+                    {t("pages.contact.messageSentDesc")}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setSubmitted(false)}
+                    className="text-accent font-bold text-sm hover:underline"
+                  >
+                    {t("pages.contact.sendAnother")}
+                  </button>
+                </div>
+              ) : (
               <form onSubmit={handleSubmit} className="space-y-8">
                 <div className="space-y-3">
-                  <label className="text-primary font-bold text-sm ml-1">Name</label>
+                  <label className="text-primary font-bold text-sm ml-1 rtl:mr-1 rtl:ml-0">{t("pages.contact.name")}</label>
                   <div className="relative">
                     <input 
-                      type="text" required placeholder="Your Full Name"
+                      type="text" required placeholder={t("pages.contact.yourName")}
                       value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
                       className="w-full bg-[#F5F7F9] border-none py-4 px-6 rounded-sm text-sm focus:ring-1 focus:ring-accent transition-all pl-6"
                     />
@@ -110,10 +129,10 @@ const Contact = () => {
                 </div>
 
                 <div className="space-y-3">
-                  <label className="text-primary font-bold text-sm ml-1">Email Address</label>
+                  <label className="text-primary font-bold text-sm ml-1 rtl:mr-1 rtl:ml-0">{t("pages.contact.email")}</label>
                   <div className="relative">
                     <input 
-                      type="email" required placeholder="Your Email"
+                      type="email" required placeholder={t("pages.contact.yourEmail")}
                       value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
                       className="w-full bg-[#F5F7F9] border-none py-4 px-6 rounded-sm text-sm focus:ring-1 focus:ring-accent transition-all pl-6"
                     />
@@ -122,10 +141,10 @@ const Contact = () => {
                 </div>
 
                 <div className="space-y-3">
-                  <label className="text-primary font-bold text-sm ml-1">Phone Number</label>
+                  <label className="text-primary font-bold text-sm ml-1 rtl:mr-1 rtl:ml-0">{t("pages.contact.phone")}</label>
                   <div className="relative">
                     <input 
-                      type="tel" required placeholder="Your Mobile Number"
+                      type="tel" required placeholder={t("pages.contact.yourPhone")}
                       value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}
                       className="w-full bg-[#F5F7F9] border-none py-4 px-6 rounded-sm text-sm focus:ring-1 focus:ring-accent transition-all pl-6"
                     />
@@ -134,9 +153,9 @@ const Contact = () => {
                 </div>
 
                 <div className="space-y-3">
-                  <label className="text-primary font-bold text-sm ml-1">Your Inquiry</label>
+                  <label className="text-primary font-bold text-sm ml-1 rtl:mr-1 rtl:ml-0">{t("pages.contact.yourInquiry")}</label>
                   <textarea 
-                    required placeholder="Write Your Message" rows={5}
+                    required placeholder={t("pages.contact.yourMessage")} rows={5}
                     value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })}
                     className="w-full bg-[#F5F7F9] border-none py-4 px-6 rounded-sm text-sm focus:ring-1 focus:ring-accent transition-all resize-none"
                   />
@@ -146,12 +165,13 @@ const Contact = () => {
                   type="submit" 
                   className="group bg-accent text-white pl-8 pr-2 py-2 flex items-center gap-6 font-bold text-xs tracking-[0.2em] transition-all hover:bg-accent/90 shadow-xl shadow-accent/20"
                 >
-                  <span>SEND MESSAGE</span>
+                  <span>{t("pages.contact.sendMessage")}</span>
                   <div className="bg-white/20 p-2.5 rounded-sm group-hover:bg-white/30 transition-colors">
                     <ArrowRight className="h-5 w-5" />
                   </div>
                 </button>
               </form>
+              )}
             </div>
           </div>
         </div>

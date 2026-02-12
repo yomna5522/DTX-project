@@ -1,24 +1,14 @@
 import { PenTool, Box, Zap } from "lucide-react";
-
-const features = [
-  {
-    icon: PenTool,
-    title: "Your Design",
-    desc: "Supply your own design in appropriate formats or select from our list of ready to print designs.",
-  },
-  {
-    icon: Box,
-    title: "Your Fabric",
-    desc: "Supply your own fabric or shop from our wide range of synthetic and natural fabrics.",
-  },
-  {
-    icon: Zap,
-    title: "Best Quality Print",
-    desc: "We deliver vibrant, long-lasting colors and sharp details that elevate your designs.",
-  },
-];
+import { useTranslation } from "react-i18next";
 
 const FeaturesGrid = () => {
+  const { t } = useTranslation();
+  const features = [
+    { icon: PenTool, titleKey: "designTitle", descKey: "designDesc" },
+    { icon: Box, titleKey: "fabricTitle", descKey: "fabricDesc" },
+    { icon: Zap, titleKey: "printTitle", descKey: "printDesc" },
+  ];
+
   return (
     <section className="py-20 bg-[#FBFBFB]">
       <div className="container mx-auto px-4">
@@ -33,13 +23,13 @@ const FeaturesGrid = () => {
               </div>
               <div>
                 <p className="text-accent text-[10px] font-bold uppercase tracking-[0.2em] mb-2">
-                  Bring your designs to life
+                  {t("services.designLabel")}
                 </p>
                 <h3 className="font-heading text-xl font-bold text-primary mb-3">
-                  {feature.title}
+                  {t(`services.${feature.titleKey}`)}
                 </h3>
                 <p className="text-gray-500 text-sm leading-relaxed">
-                  {feature.desc}
+                  {t(`services.${feature.descKey}`)}
                 </p>
               </div>
             </div>

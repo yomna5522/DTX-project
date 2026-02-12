@@ -1,20 +1,32 @@
-/* Diagnostic refresh 2 */
 import { useState } from "react";
-import { Menu, X, User } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { Menu, X } from "lucide-react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import Logo from "@/assets/Logo.png";
+import { useAuth } from "@/contexts/AuthContext";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
 
 const navLinks = [
-  { label: "Home", href: "/" },
-  { label: "About", href: "/about" },
-  { label: "Shop", href: "/shop" },
-  { label: "Portfolio", href: "/portfolio" },
-  { label: "Contact", href: "/contact" },
+  { key: "home", href: "/" },
+  { key: "about", href: "/about" },
+  { key: "services", href: "/services" },
+  { key: "shop", href: "/shop" },
+  { key: "portfolio", href: "/portfolio" },
+  { key: "contact", href: "/contact" },
 ];
 
 const Navbar = () => {
+  const { t } = useTranslation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+    setMobileOpen(false);
+    navigate("/");
+  };
 
   return (
     <nav className="bg-background shadow-sm sticky top-0 z-50 py-1">
@@ -30,51 +42,90 @@ const Navbar = () => {
               const isActive = location.pathname === link.href;
               return (
                 <Link
-                  key={link.label}
+                  key={link.key}
                   to={link.href}
                   className={`font-body text-[15px] font-bold transition-all relative py-2 ${
                     isActive ? "text-accent" : "text-foreground hover:text-accent"
                   }`}
                 >
-                  {link.label}
+                  {t(`nav.${link.key}`)}
                   {isActive && (
                     <span className="absolute bottom-0 left-0 w-full h-0.5 bg-accent animate-in fade-in slide-in-from-left-2 duration-300"></span>
                   )}
                 </Link>
               );
             })}
-            <Link
-              to="/login"
-              className={`font-body text-[15px] font-bold transition-all relative py-2 ${
-                location.pathname === "/login" ? "text-accent" : "text-foreground hover:text-accent"
-              }`}
-            >
-              Login
-              {location.pathname === "/login" && (
-                <span className="absolute bottom-0 left-0 w-full h-0.5 bg-accent animate-in fade-in slide-in-from-left-2 duration-300"></span>
-              )}
-            </Link>
-            <Link
-              to="/register"
-              className={`font-body text-[15px] font-bold transition-all relative py-2 ${
-                location.pathname === "/register" ? "text-accent" : "text-foreground hover:text-accent"
-              }`}
-            >
-              Register
-              {location.pathname === "/register" && (
-                <span className="absolute bottom-0 left-0 w-full h-0.5 bg-accent animate-in fade-in slide-in-from-left-2 duration-300"></span>
-              )}
-            </Link>
+            {user ? (
+              <>
+                <Link
+                  to="/orders"
+                  className={`font-body text-[15px] font-bold transition-all relative py-2 ${
+                    location.pathname === "/orders" || location.pathname.startsWith("/orders/") ? "text-accent" : "text-foreground hover:text-accent"
+                  }`}
+                >
+                  {t("nav.orders")}
+                  {(location.pathname === "/orders" || location.pathname.startsWith("/orders/")) && (
+                    <span className="absolute bottom-0 left-0 w-full h-0.5 bg-accent animate-in fade-in slide-in-from-left-2 duration-300"></span>
+                  )}
+                </Link>
+                <Link
+                  to="/settings"
+                  className={`font-body text-[15px] font-bold transition-all relative py-2 ${
+                    location.pathname === "/settings" ? "text-accent" : "text-foreground hover:text-accent"
+                  }`}
+                >
+                  {t("nav.settings")}
+                  {location.pathname === "/settings" && (
+                    <span className="absolute bottom-0 left-0 w-full h-0.5 bg-accent animate-in fade-in slide-in-from-left-2 duration-300"></span>
+                  )}
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="font-body text-[15px] font-bold text-foreground hover:text-accent transition-all py-2"
+                >
+                  {t("nav.logout")}
+                </button>
+              </>
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  className={`font-body text-[15px] font-bold transition-all relative py-2 ${
+                    location.pathname === "/login" ? "text-accent" : "text-foreground hover:text-accent"
+                  }`}
+                >
+                  {t("nav.login")}
+                  {location.pathname === "/login" && (
+                    <span className="absolute bottom-0 left-0 w-full h-0.5 bg-accent animate-in fade-in slide-in-from-left-2 duration-300"></span>
+                  )}
+                </Link>
+                <Link
+                  to="/register"
+                  className={`font-body text-[15px] font-bold transition-all relative py-2 ${
+                    location.pathname === "/register" ? "text-accent" : "text-foreground hover:text-accent"
+                  }`}
+                >
+                  {t("nav.register")}
+                  {location.pathname === "/register" && (
+                    <span className="absolute bottom-0 left-0 w-full h-0.5 bg-accent animate-in fade-in slide-in-from-left-2 duration-300"></span>
+                  )}
+                </Link>
+              </>
+            )}
           </div>
-          
-          <button className="text-accent p-1">
-            <div className="grid grid-cols-2 gap-1">
-              <div className="w-1.5 h-1.5 bg-accent rounded-full"></div>
-              <div className="w-1.5 h-1.5 bg-accent rounded-full"></div>
-              <div className="w-1.5 h-1.5 bg-accent rounded-full"></div>
-              <div className="w-1.5 h-1.5 bg-accent rounded-full"></div>
-            </div>
-          </button>
+
+          <div className="flex items-center gap-4">
+            <LanguageSwitcher />
+            <button className="text-accent p-1">
+              <div className="grid grid-cols-2 gap-1">
+                <div className="w-1.5 h-1.5 bg-accent rounded-full"></div>
+                <div className="w-1.5 h-1.5 bg-accent rounded-full"></div>
+                <div className="w-1.5 h-1.5 bg-accent rounded-full"></div>
+                <div className="w-1.5 h-1.5 bg-accent rounded-full"></div>
+              </div>
+            </button>
+          </div>
         </div>
 
         {/* Mobile Toggle */}
@@ -90,35 +141,70 @@ const Navbar = () => {
             const isActive = location.pathname === link.href;
             return (
               <Link
-                key={link.label}
+                key={link.key}
                 to={link.href}
                 className={`block py-3 text-sm font-bold transition-colors border-l-4 pl-3 mt-1 ${
                   isActive ? "text-accent border-accent bg-accent/5" : "text-foreground border-transparent hover:text-accent"
                 }`}
                 onClick={() => setMobileOpen(false)}
               >
-                {link.label}
+                {t(`nav.${link.key}`)}
               </Link>
             );
           })}
-          <Link
-            to="/login"
-            className={`block py-3 text-sm font-bold transition-colors border-l-4 pl-3 mt-1 ${
-              location.pathname === "/login" ? "text-accent border-accent bg-accent/5" : "text-foreground border-transparent hover:text-accent"
-            }`}
-            onClick={() => setMobileOpen(false)}
-          >
-            Login
-          </Link>
-          <Link
-            to="/register"
-            className={`block py-3 text-sm font-bold transition-colors border-l-4 pl-3 mt-1 ${
-              location.pathname === "/register" ? "text-accent border-accent bg-accent/5" : "text-foreground border-transparent hover:text-accent"
-            }`}
-            onClick={() => setMobileOpen(false)}
-          >
-            Register
-          </Link>
+          <div className="pt-3 border-t border-border mt-2">
+            <LanguageSwitcher className="py-2" />
+          </div>
+          {user ? (
+            <>
+              <Link
+                to="/orders"
+                className={`block py-3 text-sm font-bold transition-colors border-l-4 pl-3 mt-1 ${
+                  location.pathname === "/orders" || location.pathname.startsWith("/orders/") ? "text-accent border-accent bg-accent/5" : "text-foreground border-transparent hover:text-accent"
+                }`}
+                onClick={() => setMobileOpen(false)}
+              >
+                {t("nav.orders")}
+              </Link>
+              <Link
+                to="/settings"
+                className={`block py-3 text-sm font-bold transition-colors border-l-4 pl-3 mt-1 ${
+                  location.pathname === "/settings" ? "text-accent border-accent bg-accent/5" : "text-foreground border-transparent hover:text-accent"
+                }`}
+                onClick={() => setMobileOpen(false)}
+              >
+                {t("nav.settings")}
+              </Link>
+              <button
+                type="button"
+                className="block py-3 text-sm font-bold text-foreground border-transparent border-l-4 pl-3 mt-1 hover:text-accent w-full text-left"
+                onClick={handleLogout}
+              >
+                {t("nav.logout")}
+              </button>
+            </>
+          ) : (
+            <>
+              <Link
+                to="/login"
+                className={`block py-3 text-sm font-bold transition-colors border-l-4 pl-3 mt-1 ${
+                  location.pathname === "/login" ? "text-accent border-accent bg-accent/5" : "text-foreground border-transparent hover:text-accent"
+                }`}
+                onClick={() => setMobileOpen(false)}
+              >
+                {t("nav.login")}
+              </Link>
+              <Link
+                to="/register"
+                className={`block py-3 text-sm font-bold transition-colors border-l-4 pl-3 mt-1 ${
+                  location.pathname === "/register" ? "text-accent border-accent bg-accent/5" : "text-foreground border-transparent hover:text-accent"
+                }`}
+                onClick={() => setMobileOpen(false)}
+              >
+                {t("nav.register")}
+              </Link>
+            </>
+          )}
         </div>
       )}
     </nav>

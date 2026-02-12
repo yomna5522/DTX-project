@@ -1,10 +1,10 @@
-/* Diagnostic refresh */
 import TopBar from "@/components/TopBar";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import CTASection from "@/components/CTASection";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import heroPrinting from "@/assets/hero-printing.jpg";
 import heroFabrics from "@/assets/hero-fabrics.jpg";
 import aboutPrinting from "@/assets/about-printing.jpg";
@@ -21,6 +21,7 @@ const portfolioItems = [
 ];
 
 const Portfolio = () => {
+  const { t } = useTranslation();
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
   const openLightbox = (index: number) => setSelectedIndex(index);
@@ -49,7 +50,7 @@ const Portfolio = () => {
       <section className="bg-primary relative min-h-[300px] flex items-center overflow-hidden">
         <div className="container mx-auto px-4 relative z-10 py-16">
           <h1 className="font-heading text-6xl md:text-7xl font-black text-white uppercase tracking-tighter">
-            PORTFOLIO
+            {t("pages.portfolio.title")}
           </h1>
         </div>
         <div className="absolute right-0 top-0 h-full w-1/2 hidden md:block">
@@ -80,10 +81,10 @@ const Portfolio = () => {
               </span>
             </div>
             <p className="text-accent text-[11px] font-bold uppercase tracking-[0.3em] mb-4 relative z-10">
-              2- Our Works
+              {t("pages.portfolio.ourWorks")}
             </p>
             <h2 className="font-heading text-4xl md:text-5xl font-black text-primary relative z-10">
-              Showcasing Our Excellence
+              {t("pages.portfolio.showcasingExcellence")}
             </h2>
           </div>
 
