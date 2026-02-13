@@ -3,7 +3,8 @@ import { ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import heroPrinting from "@/assets/hero-printing.jpg";
-import heroFabrics from "@/assets/hero-fabrics.jpg";
+import beautyOfCulture from "@/assets/Beauty of the Culture_.jpg";
+import downloadFabric from "@/assets/download.jpg";
 
 const HeroSection = () => {
   const { t } = useTranslation();
@@ -17,7 +18,13 @@ const HeroSection = () => {
       description: t("hero.slide1Desc"),
     },
     {
-      image: heroFabrics,
+      image: downloadFabric,
+      subtitle: t("hero.subtitle"),
+      title: t("hero.slide3Title"),
+      description: t("hero.slide3Desc"),
+    },
+    {
+      image: beautyOfCulture,
       subtitle: t("hero.subtitle"),
       title: t("hero.slide2Title"),
       description: t("hero.slide2Desc"),
@@ -32,7 +39,7 @@ const HeroSection = () => {
   }, []);
 
   return (
-    <section className="relative min-h-[700px] md:min-h-[850px] flex items-center bg-primary overflow-hidden">
+    <section className="relative min-h-[500px] md:min-h-[600px] flex items-center bg-primary overflow-hidden">
       {/* Background Pattern - Diagonal Lines */}
       <div className="absolute inset-0 opacity-[0.07] pointer-events-none">
         <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
@@ -45,19 +52,19 @@ const HeroSection = () => {
         </svg>
       </div>
 
-      <div className="container mx-auto px-4 relative z-10 py-16 md:py-24">
+      <div className="container mx-auto px-4 relative z-10 py-12 md:py-16">
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
           <div key={current} className="max-w-xl transition-all duration-700 ease-in-out transform animate-fade-in-up">
-            <div className="flex items-center gap-4 mb-6">
+            <div className="flex items-center gap-4 mb-4">
               <span className="w-12 h-0.5 bg-secondary rounded-full"></span>
-              <p className="text-white font-bold tracking-[0.3em] text-[10px] uppercase">
+              <p className="text-white font-bold tracking-[0.3em] text-[9px] uppercase">
                 {slides[current].subtitle}
               </p>
             </div>
-            <h1 className="font-heading text-7xl md:text-[110px] font-black text-white leading-[0.9] mb-8 tracking-tighter uppercase">
+            <h1 className="font-heading text-5xl md:text-7xl font-black text-white leading-[0.9] mb-6 tracking-tighter uppercase">
               {slides[current].title}
             </h1>
-            <p className="text-white/80 font-body text-base md:text-lg leading-relaxed mb-12 max-w-lg font-medium">
+            <p className="text-white/80 font-body text-sm md:text-base leading-relaxed mb-10 max-w-lg font-medium">
               {t("hero.tagline")}
             </p>
             <div className="flex flex-wrap gap-5">
@@ -76,7 +83,7 @@ const HeroSection = () => {
             </div>
           </div>
 
-          <div className="relative hidden lg:block h-[550px] w-full">
+          <div className="relative hidden lg:block h-[450px] w-full">
             <div className="absolute inset-0 flex items-center justify-center">
                <div className="relative w-full h-full rounded-2xl overflow-hidden shadow-2xl metallic-shine transform hover:scale-[1.02] transition-transform duration-700">
                   <img 

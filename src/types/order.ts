@@ -10,10 +10,11 @@ export type OrderStatus =
   | "COMPLETED"
   | "CANCELLED";
 
-export type DesignSource = "preset" | "upload" | "repeat";
-export type FabricType = "artificial" | "natural";
-export type FabricSource = "customer" | "factory";
-export type PaymentMethod = "COD" | "BANK_TRANSFER";
+export type DesignSource = "existing" | "upload" | "repeat";
+export type FabricType = "sublimation" | "natural";
+export type OrderType = "sample" | "order";
+export type FabricSource = "customer" | "factory" | "not_sure";
+export type PaymentMethod = "instapay" | "COD";
 
 export interface PresetDesign {
   id: string;
@@ -21,6 +22,15 @@ export interface PresetDesign {
   description: string;
   imageUrl: string;
   basePricePerUnit: number;
+}
+
+export interface FactoryFabric {
+  id: string;
+  name: string;
+  type: FabricType;
+  pricePerMeter: number;
+  minimumQuantity: number;
+  description?: string;
 }
 
 export interface DesignChoice {
@@ -32,7 +42,14 @@ export interface DesignChoice {
 
 export interface FabricChoice {
   fabricType: FabricType;
+  orderType: OrderType;
   fabricSource: FabricSource;
+  // For "customer" source
+  customerNotes?: string;
+  // For "factory" source
+  factoryFabricId?: string;
+  // For "not_sure" source
+  inquiry?: string;
 }
 
 export interface OrderItem {

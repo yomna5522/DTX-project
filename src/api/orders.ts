@@ -7,12 +7,25 @@ import type {
   FabricChoice,
   PaymentMethod,
   Invoice,
+  FactoryFabric,
 } from "@/types/order";
 
+import aestheticWallpaper from "@/assets/𝘈𝘦𝘴𝘵𝘩𝘦𝘵𝘪𝘤 𝘞𝘢𝘭𝘭𝘱𝘢𝘱𝘦𝘳.jpg";
+import cherryRedWallpaper from "@/assets/Cherry red wallpaper.jpg";
+import ginghamPattern from "@/assets/Free digital gingham scrapbooking paper - ausdruckbares Geschenkpapier - freebie.jpg";
+
 const PRESETS: PresetDesign[] = [
-  { id: "p1", name: "Classic Stripes", description: "Horizontal stripes", imageUrl: "/placeholder.svg", basePricePerUnit: 25 },
-  { id: "p2", name: "Floral Print", description: "Floral pattern", imageUrl: "/placeholder.svg", basePricePerUnit: 35 },
-  { id: "p3", name: "Geometric", description: "Geometric design", imageUrl: "/placeholder.svg", basePricePerUnit: 30 },
+  { id: "p1", name: "Aesthetic Floral", description: "Beautiful floral wallpaper pattern", imageUrl: aestheticWallpaper, basePricePerUnit: 35 },
+  { id: "p2", name: "Cherry Red", description: "Vibrant cherry red pattern", imageUrl: cherryRedWallpaper, basePricePerUnit: 40 },
+  { id: "p3", name: "Gingham Classic", description: "Classic gingham check pattern", imageUrl: ginghamPattern, basePricePerUnit: 30 },
+];
+
+const FACTORY_FABRICS: FactoryFabric[] = [
+  { id: "f1", name: "Premium Sublimation Polyester", type: "sublimation", pricePerMeter: 45, minimumQuantity: 1, description: "High-quality polyester for vibrant sublimation prints" },
+  { id: "f2", name: "Standard Sublimation Fabric", type: "sublimation", pricePerMeter: 35, minimumQuantity: 1, description: "Standard polyester fabric for sublimation" },
+  { id: "f3", name: "Organic Cotton Natural", type: "natural", pricePerMeter: 55, minimumQuantity: 5, description: "100% organic cotton for direct printing" },
+  { id: "f4", name: "Cotton Blend Natural", type: "natural", pricePerMeter: 40, minimumQuantity: 5, description: "Cotton blend fabric for natural printing" },
+  { id: "f5", name: "Linen Natural", type: "natural", pricePerMeter: 65, minimumQuantity: 5, description: "Premium linen fabric for direct printing" },
 ];
 
 let orders: Order[] = [];
@@ -44,6 +57,14 @@ export const ordersApi = {
     return PRESETS.find((p) => p.id === id);
   },
 
+  getFactoryFabrics(): FactoryFabric[] {
+    return FACTORY_FABRICS;
+  },
+
+  getFactoryFabricById(id: string): FactoryFabric | undefined {
+    return FACTORY_FABRICS.find((f) => f.id === id);
+  },
+
   getOrdersByUserId(userId: string): Order[] {
     const all = loadOrders();
     return all.filter((o) => o.userId === userId).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -54,8 +75,17 @@ export const ordersApi = {
   },
 
   computeUnitPrice(designChoice: DesignChoice, fabricChoice: FabricChoice): number {
+    // If factory provides fabric, use factory fabric pricing
+    if (fabricChoice.fabricSource === "factory" && fabricChoice.factoryFabricId) {
+      const fabric = this.getFactoryFabricById(fabricChoice.factoryFabricId);
+      if (fabric) {
+        return fabric.pricePerMeter;
+      }
+    }
+
+    // Default pricing for other scenarios
     let base = 20;
-    if (designChoice.source === "preset" && designChoice.presetId) {
+    if (designChoice.source === "existing" && designChoice.presetId) {
       const preset = this.getPresetById(designChoice.presetId);
       if (preset) base = preset.basePricePerUnit;
     } else if (designChoice.source === "upload") {
@@ -63,10 +93,29 @@ export const ordersApi = {
     } else if (designChoice.source === "repeat") {
       base = 22;
     }
-    if (fabricChoice.fabricSource === "factory") {
+
+    // Add fabric type premium if customer provides fabric
+    if (fabricChoice.fabricSource === "customer") {
       base += fabricChoice.fabricType === "natural" ? 15 : 10;
     }
+
     return base;
+  },
+
+  getMinimumQuantity(fabricChoice: FabricChoice): number {
+    // Sample orders
+    if (fabricChoice.orderType === "sample") {
+      return fabricChoice.fabricType === "sublimation" ? 1 : 5;
+    }
+
+    // Regular orders with factory fabric
+    if (fabricChoice.fabricSource === "factory" && fabricChoice.factoryFabricId) {
+      const fabric = this.getFactoryFabricById(fabricChoice.factoryFabricId);
+      return fabric?.minimumQuantity || 1;
+    }
+
+    // Default minimum
+    return 1;
   },
 
   createOrder(params: {
@@ -104,7 +153,7 @@ export const ordersApi = {
       };
       if (params.paymentMethod === "COD") {
         status = "PAID";
-      } else if (params.paymentMethod === "BANK_TRANSFER" && params.paymentProofFileName) {
+      } else if (params.paymentMethod === "instapay" && params.paymentProofFileName) {
         status = "PAYMENT_PENDING";
       }
     } else {
@@ -150,5 +199,40 @@ export const ordersApi = {
       notes: item.notes,
       paymentMethod: "COD",
     });
+  },
+
+  createQuotationRequest(params: {
+    userId: string;
+    designChoice: DesignChoice;
+    fabricChoice: FabricChoice;
+    quantity: number;
+    notes: string;
+  }): Order {
+    // For quotation requests, we don't calculate price yet - it will be provided by admin
+    const now = new Date().toISOString();
+    const orderId = `quot-${Date.now()}`;
+    const item: OrderItem = {
+      designChoice: params.designChoice,
+      fabricChoice: params.fabricChoice,
+      quantity: params.quantity,
+      notes: params.notes,
+      unitPrice: 0, // Will be set when quotation is provided
+      totalPrice: 0, // Will be set when quotation is provided
+    };
+    const order: Order = {
+      id: orderId,
+      userId: params.userId,
+      status: "SUBMITTED", // Waiting for quotation
+      items: [item],
+      totalAmount: 0, // Will be set when quotation is provided
+      // No payment method or invoice for quotation requests
+      createdAt: now,
+      updatedAt: now,
+      estimatedCompletion: undefined,
+    };
+    orders = loadOrders();
+    orders.push(order);
+    saveOrders();
+    return order;
   },
 };

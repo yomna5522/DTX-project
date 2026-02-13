@@ -55,56 +55,100 @@ const Orders = () => {
         </div>
       </section>
 
-      <section className="py-16 px-4">
-        <div className="container mx-auto max-w-4xl">
-          <div className="flex flex-wrap items-center gap-4 mb-8">
-            <label className="font-bold text-primary">{t("pages.orders.filterByStatus")}</label>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as OrderStatus | "ALL")}
-              className="bg-[#F5F7F9] border-none py-2 px-4 rounded-lg text-sm focus:ring-1 focus:ring-accent"
-            >
-              {STATUS_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.value === "ALL" ? t("pages.orders.all") : opt.value.replace(/_/g, " ")}
-                </option>
-              ))}
-            </select>
+      <section className="relative py-16 px-4 bg-white">
+        {/* Background Decorative Lines */}
+        <div className="absolute inset-0 pointer-events-none opacity-20 overflow-hidden">
+          <svg className="absolute top-0 right-0 w-[500px] h-[500px]" viewBox="0 0 500 500" fill="none">
+            <path d="M480 20C400 150 550 300 350 450" stroke="#004A99" strokeWidth="2" fill="none" className="opacity-50" />
+            <path d="M500 100C420 230 570 380 370 530" stroke="#004A99" strokeWidth="1" fill="none" className="opacity-30" />
+          </svg>
+        </div>
+
+        <div className="container mx-auto max-w-5xl relative z-10">
+          {/* Filter Section */}
+          <div className="mb-10">
+            <div className="flex flex-wrap items-center gap-4 bg-white p-6 rounded-xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-gray-100">
+              <label className="font-bold text-primary text-sm">{t("pages.orders.filterByStatus")}</label>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as OrderStatus | "ALL")}
+                className="flex-1 min-w-[200px] bg-gray-50 border-2 border-gray-200 py-3 px-4 rounded-lg text-sm font-medium text-primary focus:ring-2 focus:ring-primary focus:border-primary transition-all"
+              >
+                {STATUS_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.value === "ALL" ? t("pages.orders.all") : opt.value.replace(/_/g, " ")}
+                  </option>
+                ))}
+              </select>
+              <div className="text-sm text-muted-foreground">
+                {filteredOrders.length} {filteredOrders.length === 1 ? t("pages.orders.order") : t("pages.orders.order")}s
+              </div>
+            </div>
           </div>
 
           {filteredOrders.length === 0 ? (
-            <p className="text-muted-foreground text-center py-12">
-              {orders.length === 0 ? t("pages.orders.noOrders") : t("pages.orders.noMatch")}
-            </p>
+            <div className="text-center py-20 bg-white rounded-xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-gray-100">
+              <p className="text-muted-foreground text-lg mb-4">
+                {orders.length === 0 ? t("pages.orders.noOrders") : t("pages.orders.noMatch")}
+              </p>
+              {orders.length === 0 && (
+                <Link 
+                  to="/shop" 
+                  className="inline-flex items-center gap-2 bg-accent text-white font-bold text-sm px-6 py-3 rounded-lg hover:bg-accent/90 transition-all shadow-lg shadow-accent/20"
+                >
+                  {t("pages.orders.createNew")}
+                </Link>
+              )}
+            </div>
           ) : (
             <div className="space-y-4">
               {filteredOrders.map((order) => (
                 <Link
                   key={order.id}
                   to={`/orders/${order.id}`}
-                  className="block p-4 md:p-6 border-2 border-border rounded-lg hover:border-accent/50 hover:bg-accent/5 transition-all"
+                  className="block group"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div>
-                      <p className="font-heading font-bold text-primary">{t("pages.orders.order")} {order.id}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {new Date(order.createdAt).toLocaleDateString()} · {order.items.length} {t("pages.orders.items")}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <span className="font-bold text-primary">{order.totalAmount} EGP</span>
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          order.status === "COMPLETED"
-                            ? "bg-green-100 text-green-800"
-                            : order.status === "CANCELLED"
-                              ? "bg-gray-100 text-gray-600"
-                              : "bg-accent/10 text-accent"
-                        }`}
-                      >
-                        {order.status.replace(/_/g, " ")}
-                      </span>
-                      <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                  <div className="bg-white p-6 rounded-xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border-2 border-gray-100 hover:border-primary/30 hover:shadow-2xl hover:-translate-y-1 transition-all duration-300">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                      <div className="flex-1 min-w-[200px]">
+                        <p className="font-heading font-black text-primary text-lg mb-2 group-hover:text-primary/80 transition-colors">
+                          {t("pages.orders.order")} {order.id}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <span>{new Date(order.createdAt).toLocaleDateString()}</span>
+                          </span>
+                          <span>·</span>
+                          <span>{order.items.length} {t("pages.orders.items")}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <p className="font-heading font-black text-primary text-xl mb-1">
+                            {order.totalAmount} EGP
+                          </p>
+                        </div>
+                        <span
+                          className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider ${
+                            order.status === "COMPLETED"
+                              ? "bg-green-100 text-green-700 border-2 border-green-200"
+                              : order.status === "CANCELLED"
+                                ? "bg-gray-100 text-gray-600 border-2 border-gray-200"
+                                : order.status === "PAID"
+                                  ? "bg-blue-100 text-blue-700 border-2 border-blue-200"
+                                  : order.status === "IN_PRODUCTION"
+                                    ? "bg-amber-100 text-amber-700 border-2 border-amber-200"
+                                    : order.status === "READY"
+                                      ? "bg-emerald-100 text-emerald-700 border-2 border-emerald-200"
+                                      : "bg-accent/10 text-accent border-2 border-accent/20"
+                          }`}
+                        >
+                          {order.status.replace(/_/g, " ")}
+                        </span>
+                        <div className="w-10 h-10 rounded-full bg-primary/5 group-hover:bg-primary/10 flex items-center justify-center transition-colors">
+                          <ChevronRight className="h-5 w-5 text-primary group-hover:translate-x-1 transition-transform" />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </Link>
@@ -112,8 +156,11 @@ const Orders = () => {
             </div>
           )}
 
-          <div className="mt-8 text-center">
-            <Link to="/shop" className="text-accent font-bold hover:underline">
+          <div className="mt-10 text-center">
+            <Link 
+              to="/shop" 
+              className="inline-flex items-center gap-2 bg-accent text-white font-bold text-sm px-8 py-4 rounded-lg hover:bg-accent/90 transition-all shadow-lg shadow-accent/20 hover:shadow-xl hover:shadow-accent/30 hover:scale-105"
+            >
               {t("pages.orders.createNew")}
             </Link>
           </div>

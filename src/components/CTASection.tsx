@@ -1,7 +1,7 @@
 import { ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import heroFabrics from "@/assets/hero-fabrics.jpg";
+import beautyOfCulture from "@/assets/Beauty of the Culture_.jpg";
 
 const CTASection = () => {
   const { t } = useTranslation();
@@ -10,7 +10,7 @@ const CTASection = () => {
       {/* Background Image with Dark Overlay */}
       <div className="absolute inset-0">
         <img 
-          src={heroFabrics} 
+          src={beautyOfCulture} 
           alt="Fabric rolls background" 
           className="w-full h-full object-cover"
         />

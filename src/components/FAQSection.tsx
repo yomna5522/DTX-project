@@ -5,7 +5,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { useTranslation } from "react-i18next";
-import heroFabrics from "@/assets/hero-fabrics.jpg";
+import fabricScrapProject from "@/assets/15 Easy Scrap Fabric Project Ideas to Use Up Leftover Material _ Mummy Time.jpg";
 
 const FAQSection = () => {
   const { t } = useTranslation();
@@ -22,7 +22,7 @@ const FAQSection = () => {
         {/* Left Side: Image */}
         <div className="w-full lg:w-1/2 min-h-[500px] md:min-h-[700px] relative overflow-hidden group">
           <img 
-            src={heroFabrics} 
+            src={fabricScrapProject} 
             alt="Fabric manufacturing" 
             className="absolute inset-0 w-full h-full object-cover transition-transform duration-[2000ms] group-hover:scale-110" 
           />

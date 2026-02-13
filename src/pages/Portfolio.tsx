@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import heroPrinting from "@/assets/hero-printing.jpg";
-import heroFabrics from "@/assets/hero-fabrics.jpg";
+const heroFabrics = "https://images.unsplash.com/photo-1618220179428-22790b461013?w=1200&h=800&fit=crop"; // Digital textile printer
 import aboutPrinting from "@/assets/about-printing.jpg";
 
 const portfolioItems = [

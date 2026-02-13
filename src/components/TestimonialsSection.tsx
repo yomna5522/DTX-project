@@ -1,7 +1,59 @@
-import { Quote } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Quote, ChevronLeft, ChevronRight } from "lucide-react";
 import aboutImage from "@/assets/about-printing.jpg";
 
+interface Testimonial {
+  text: string;
+  name: string;
+  company: string;
+  initials: string;
+}
+
+const testimonials: Testimonial[] = [
+  {
+    text: "Amazing print quality and vibrant colors! DTX brought my designs to life perfectly. Highly recommend their professional team for any high-end textile project.",
+    name: "Yomna Ahmed",
+    company: "Floki Systems",
+    initials: "YA"
+  },
+  {
+    text: "Outstanding service and exceptional quality! The team at DTX understood our vision and delivered beyond expectations. The fabric printing was flawless and the colors were exactly as we requested.",
+    name: "Mohamed Ali",
+    company: "Design Studio",
+    initials: "MA"
+  },
+  {
+    text: "Working with DTX has been a game-changer for our business. Their attention to detail and commitment to quality is unmatched. We've received countless compliments on our printed fabrics.",
+    name: "Sarah Hassan",
+    company: "Fashion Brand",
+    initials: "SH"
+  },
+  {
+    text: "Professional, reliable, and creative! DTX transformed our ideas into beautiful printed fabrics. The turnaround time was impressive and the quality exceeded our expectations.",
+    name: "Ahmed Mostafa",
+    company: "Textile Company",
+    initials: "AM"
+  }
+];
+
 const TestimonialsSection = () => {
+  const [current, setCurrent] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrent((prev) => (prev + 1) % testimonials.length);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const goToPrevious = () => {
+    setCurrent((prev) => (prev - 1 + testimonials.length) % testimonials.length);
+  };
+
+  const goToNext = () => {
+    setCurrent((prev) => (prev + 1) % testimonials.length);
+  };
+
   return (
     <section className="bg-white overflow-hidden py-0 border-y border-border/50">
       <div className="flex flex-col lg:flex-row">
@@ -24,21 +76,58 @@ const TestimonialsSection = () => {
               What Our Clients Say About Us
             </h2>
             
-            <div className="bg-white p-12 shadow-[0_40px_80px_-15px_rgba(0,0,0,0.1)] border border-gray-100 relative group transition-all hover:-translate-y-1">
-              <div className="absolute -top-6 -left-0 w-12 h-12 bg-accent flex items-center justify-center text-white shadow-lg">
-                <Quote className="h-6 w-6" />
+            <div className="relative">
+              <div 
+                key={current}
+                className="bg-white p-12 shadow-[0_40px_80px_-15px_rgba(0,0,0,0.1)] border border-gray-100 relative group transition-opacity duration-500"
+              >
+                <div className="absolute -top-6 -left-0 w-12 h-12 bg-accent flex items-center justify-center text-white shadow-lg">
+                  <Quote className="h-6 w-6" />
+                </div>
+                <p className="text-gray-500 text-lg leading-relaxed mb-10 font-medium italic">
+                  "{testimonials[current].text}"
+                </p>
+                <div className="flex items-center gap-5">
+                  <div className="w-14 h-14 bg-primary/5 rounded-full flex items-center justify-center overflow-hidden border border-gray-100">
+                    <span className="text-accent font-black text-lg">{testimonials[current].initials}</span>
+                  </div>
+                  <div>
+                    <h4 className="font-heading font-black text-lg text-primary tracking-tight">{testimonials[current].name}</h4>
+                    <p className="text-[10px] text-accent font-black uppercase tracking-widest">{testimonials[current].company}</p>
+                  </div>
+                </div>
               </div>
-              <p className="text-gray-500 text-lg leading-relaxed mb-10 font-medium italic">
-                "Amazing print quality and vibrant colors! DTX brought my designs to life perfectly. Highly recommend their professional team for any high-end textile project."
-              </p>
-              <div className="flex items-center gap-5">
-                <div className="w-14 h-14 bg-primary/5 rounded-full flex items-center justify-center overflow-hidden border border-gray-100">
-                  <span className="text-accent font-black text-lg">AE</span>
+
+              {/* Navigation Buttons */}
+              <div className="flex items-center gap-4 mt-6">
+                <button
+                  onClick={goToPrevious}
+                  className="w-10 h-10 rounded-full bg-white border-2 border-gray-200 flex items-center justify-center hover:border-accent hover:bg-accent/5 transition-all"
+                  aria-label="Previous testimonial"
+                >
+                  <ChevronLeft className="h-5 w-5 text-gray-600" />
+                </button>
+                <div className="flex items-center gap-2">
+                  {testimonials.map((_, index) => (
+                    <button
+                      key={index}
+                      onClick={() => setCurrent(index)}
+                      className={`h-1.5 rounded-full transition-all duration-300 ${
+                        index === current 
+                          ? "w-8 bg-accent" 
+                          : "w-1.5 bg-gray-300 hover:bg-gray-400"
+                      }`}
+                      aria-label={`Go to testimonial ${index + 1}`}
+                    />
+                  ))}
                 </div>
-                <div>
-                  <h4 className="font-heading font-black text-lg text-primary tracking-tight">Yomna Ahmed</h4>
-                  <p className="text-[10px] text-accent font-black uppercase tracking-widest">Floki Systems</p>
-                </div>
+                <button
+                  onClick={goToNext}
+                  className="w-10 h-10 rounded-full bg-white border-2 border-gray-200 flex items-center justify-center hover:border-accent hover:bg-accent/5 transition-all"
+                  aria-label="Next testimonial"
+                >
+                  <ChevronRight className="h-5 w-5 text-gray-600" />
+                </button>
               </div>
             </div>
           </div>

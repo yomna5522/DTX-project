@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Settings, LogOut } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import Logo from "@/assets/Logo.png";
@@ -68,24 +68,6 @@ const Navbar = () => {
                     <span className="absolute bottom-0 left-0 w-full h-0.5 bg-accent animate-in fade-in slide-in-from-left-2 duration-300"></span>
                   )}
                 </Link>
-                <Link
-                  to="/settings"
-                  className={`font-body text-[15px] font-bold transition-all relative py-2 ${
-                    location.pathname === "/settings" ? "text-accent" : "text-foreground hover:text-accent"
-                  }`}
-                >
-                  {t("nav.settings")}
-                  {location.pathname === "/settings" && (
-                    <span className="absolute bottom-0 left-0 w-full h-0.5 bg-accent animate-in fade-in slide-in-from-left-2 duration-300"></span>
-                  )}
-                </Link>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="font-body text-[15px] font-bold text-foreground hover:text-accent transition-all py-2"
-                >
-                  {t("nav.logout")}
-                </button>
               </>
             ) : (
               <>
@@ -115,16 +97,32 @@ const Navbar = () => {
             )}
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            {user && (
+              <>
+                <Link
+                  to="/settings"
+                  className={`transition-all relative p-2 ${
+                    location.pathname === "/settings" ? "text-accent" : "text-foreground hover:text-accent"
+                  }`}
+                  title={t("nav.settings")}
+                >
+                  <Settings className="h-5 w-5" />
+                  {location.pathname === "/settings" && (
+                    <span className="absolute bottom-0 left-0 w-full h-0.5 bg-accent animate-in fade-in slide-in-from-left-2 duration-300"></span>
+                  )}
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="transition-all relative p-2 text-foreground hover:text-accent"
+                  title={t("nav.logout")}
+                >
+                  <LogOut className="h-5 w-5" />
+                </button>
+              </>
+            )}
             <LanguageSwitcher />
-            <button className="text-accent p-1">
-              <div className="grid grid-cols-2 gap-1">
-                <div className="w-1.5 h-1.5 bg-accent rounded-full"></div>
-                <div className="w-1.5 h-1.5 bg-accent rounded-full"></div>
-                <div className="w-1.5 h-1.5 bg-accent rounded-full"></div>
-                <div className="w-1.5 h-1.5 bg-accent rounded-full"></div>
-              </div>
-            </button>
           </div>
         </div>
 
@@ -168,11 +166,12 @@ const Navbar = () => {
               </Link>
               <Link
                 to="/settings"
-                className={`block py-3 text-sm font-bold transition-colors border-l-4 pl-3 mt-1 ${
+                className={`block py-3 text-sm font-bold transition-colors border-l-4 pl-3 mt-1 flex items-center gap-2 ${
                   location.pathname === "/settings" ? "text-accent border-accent bg-accent/5" : "text-foreground border-transparent hover:text-accent"
                 }`}
                 onClick={() => setMobileOpen(false)}
               >
+                <Settings className="h-4 w-4" />
                 {t("nav.settings")}
               </Link>
               <button

@@ -78,16 +78,28 @@ const Settings = () => {
         </div>
       </section>
 
-      <section className="py-16 px-4">
-        <div className="container mx-auto max-w-2xl space-y-12">
-          <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-            <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-amber-800">
-              {t("pages.settings.notice")}
-            </p>
+      <section className="py-16 md:px-4 relative">
+        {/* Background decorative container */}
+        <div className="absolute inset-0 pointer-events-none opacity-10 overflow-hidden">
+          <div className="absolute top-20 right-10 w-96 h-96 bg-primary rounded-full blur-3xl"></div>
+          <div className="absolute bottom-20 left-10 w-96 h-96 bg-accent rounded-full blur-3xl"></div>
+        </div>
+
+        <div className="container mx-auto w-full relative z-10">
+          {/* First Container - Notice */}
+          <div className="mb-8">
+            <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl shadow-sm">
+              <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-800">
+                {t("pages.settings.notice")}
+              </p>
+            </div>
           </div>
 
-          <form onSubmit={handleSaveProfile} className="space-y-6 p-6 border-2 border-border rounded-lg">
+          {/* Second Container - Forms */}
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Contact & Shipping Form */}
+            <form onSubmit={handleSaveProfile} className="space-y-6 p-6 bg-white border-2 border-gray-200 rounded-xl shadow-lg hover:shadow-xl transition-shadow">
             <h2 className="font-heading text-xl font-black text-primary">{t("pages.settings.contactShipping")}</h2>
             <div>
               <label className="block font-bold text-primary text-sm mb-1">{t("pages.settings.fullName")}</label>
@@ -134,9 +146,10 @@ const Settings = () => {
               {t("pages.settings.saveProfile")}
             </button>
             {profileSaved && <p className="text-sm text-green-600 font-medium">{t("pages.settings.profileSaved")}</p>}
-          </form>
+            </form>
 
-          <form onSubmit={handleChangePassword} className="space-y-6 p-6 border-2 border-border rounded-lg">
+            {/* Change Password Form */}
+            <form onSubmit={handleChangePassword} className="space-y-6 p-6 bg-white border-2 border-gray-200 rounded-xl shadow-lg hover:shadow-xl transition-shadow">
             <h2 className="font-heading text-xl font-black text-primary">{t("pages.settings.changePassword")}</h2>
             <div>
               <label className="block font-bold text-primary text-sm mb-1">{t("pages.settings.currentPassword")}</label>
@@ -173,7 +186,8 @@ const Settings = () => {
             >
               {t("pages.settings.updatePassword")}
             </button>
-          </form>
+            </form>
+          </div>
         </div>
       </section>
 
