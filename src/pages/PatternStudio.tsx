@@ -120,15 +120,12 @@ const PatternStudio = () => {
       <TopBar />
       <Navbar />
 
-      {/* Hero – same as Services / Shop */}
+      {/* Hero – match Portfolio */}
       <section className="bg-primary relative min-h-[300px] flex items-center overflow-hidden">
         <div className="container mx-auto px-4 relative z-10 py-16">
-          <h1 className="font-heading text-5xl md:text-7xl font-black text-white uppercase tracking-tighter">
+          <h1 className="font-heading text-6xl md:text-7xl font-black text-white uppercase tracking-tighter">
             {t("pages.patternStudio.title")}
           </h1>
-          <p className="text-white/90 font-body text-sm mt-3 max-w-xl">
-            {t("pages.patternStudio.subtitle")}
-          </p>
         </div>
         <div className="absolute right-0 top-0 h-full w-1/2 hidden md:block">
           <div className="absolute inset-0 bg-gradient-to-r from-primary to-transparent z-10" />
@@ -136,18 +133,25 @@ const PatternStudio = () => {
         </div>
       </section>
 
-      {/* First section – same structure as Services / About */}
-      <section className="relative pt-16 pb-24 z-10 px-4 bg-white">
-        {/* Background watermark like Services/About */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 select-none pointer-events-none">
-          <span className="text-[120px] md:text-[200px] font-heading font-black text-gray-100 uppercase tracking-tighter opacity-80 scale-x-110">
-            Pattern
-          </span>
+      {/* Content section – match Portfolio (faded word, red overline, title, then grid/card) */}
+      <section className="relative pt-16 pb-24 z-10 px-4">
+        {/* Decorative lines – match Portfolio */}
+        <div className="absolute inset-0 pointer-events-none opacity-20 overflow-hidden">
+          <svg className="absolute top-0 right-0 w-[500px] h-[500px]" viewBox="0 0 500 500" fill="none">
+            <path d="M480 20C400 150 550 300 350 450" stroke="#004A99" strokeWidth="2" fill="none" className="opacity-50" />
+            <path d="M500 100C420 230 570 380 370 530" stroke="#004A99" strokeWidth="1" fill="none" className="opacity-30" />
+          </svg>
         </div>
-        <div className="container mx-auto relative">
-          <div className="text-center mb-12">
-            <p className="text-accent text-[11px] font-bold uppercase tracking-[0.3em] mb-2">
-              Design Studio
+
+        <div className="container mx-auto relative cursor-default">
+          <div className="text-center mb-16 relative">
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 select-none pointer-events-none">
+              <span className="text-[120px] md:text-[200px] font-heading font-black text-gray-100 uppercase tracking-tighter opacity-80 scale-x-110">
+                Design
+              </span>
+            </div>
+            <p className="text-accent text-[11px] font-bold uppercase tracking-[0.3em] mb-4 relative z-10">
+              {t("pages.patternStudio.title")}
             </p>
             <h2 className="font-heading text-4xl md:text-5xl font-black text-primary relative z-10">
               {t("pages.patternStudio.createPattern")}

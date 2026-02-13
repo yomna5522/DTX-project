@@ -5,7 +5,7 @@
     "services": "Services",
     "shop": "Shop",
     "portfolio": "Portfolio",
-    "patternStudio": "Pattern Studio",
+    "patternStudio": "Design Studio",
     "contact": "Contact",
     "orders": "Orders",
     "settings": "Settings",
@@ -304,7 +304,7 @@
       "showcasingExcellence": "Showcasing Our Excellence"
     },
     "patternStudio": {
-      "title": "Pattern Studio",
+      "title": "Design Studio",
       "subtitle": "Create seamless repeating patterns, preview how they look when tiled, and save them to your library to use in orders.",
       "createPattern": "Create a pattern",
       "createDesc": "Upload an image to use as a tile. Adjust the tile size to see how it repeats seamlessly.",
