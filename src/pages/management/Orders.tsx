@@ -1,962 +1,1043 @@
 import React, { useState, useMemo } from "react";
 import ManagementLayout from "@/components/management/ManagementLayout";
-import { 
-  ShoppingBag, 
-  Plus, 
-  Search, 
-  Filter, 
-  ChevronRight, 
-  MoreVertical, 
-  Pencil, 
-  Trash, 
-  Calendar,
+import {
+  ShoppingBag,
+  Search,
+  ChevronRight,
   Users,
   Package,
-  Layers,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  RotateCcw,
-  Truck,
-  PlusCircle,
-  X,
   FileText,
-  AlertTriangle,
-  ArrowRight,
-  ChevronDown,
-  Printer,
-  Cpu,
-  Boxes,
-  Palette,
-  ExternalLink,
-  Info,
   Banknote,
-  LayoutGrid,
-  Image as LucideImage
+  Layers,
+  Tag,
+  AlertCircle,
+  X,
+  Mail,
+  MessageCircle,
+  Copy,
+  ExternalLink,
+  Download,
+  Plus,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { 
-  Sheet, 
-  SheetContent, 
-  SheetHeader, 
-  SheetTitle,
-  SheetDescription,
-  SheetFooter,
-  SheetClose
-} from "@/components/ui/sheet";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator
-} from "@/components/ui/dropdown-menu";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { ordersApi } from "@/api/orders";
+import { authApi } from "@/api/auth";
+import { userDesignsApi } from "@/api/userDesigns";
+import type { Order as ApiOrder, OrderStatus as ApiOrderStatus } from "@/types/order";
 
-// --- Types ---
+type DisplayStatus = "Pending" | "In Progress" | "Done" | "Cancelled";
 
-type OrderStatus = "Pending Confirmation" | "Order confirmed" | "In Production" | "Ready for Pickup" | "Delivered" | "Cancelled" | "Returned";
-type OrderCategory = "New" | "Pending" | "Completed" | "Cancelled" | "Returns";
-
-
-interface OrderItem {
-  id: string;
-  productId: string;
-  productName: string;
-  quantity: number;
-  unit: string;
-  pricePerUnit: number;
-  total: number;
-  productionOrderId?: string; // Linked production order
-  attachments: string[];
-  image?: string;
-}
-
-interface Order {
-  id: string;
-  date: string;
-  customerId: string;
-  customerName: string;
-  customerType: "Regular" | "Business" | "Premium";
-  items: OrderItem[];
-  totalAmount: number;
-  status: OrderStatus;
-  category: OrderCategory;
-  paymentStatus: "Paid" | "Unpaid" | "Partial";
-  notes?: string;
-  returnNote?: string;
-}
-
-interface ProductionOrder {
-  id: string;
-  orderId: string;
-  itemId: string;
-  productName: string;
-  status: "Draft" | "Allocated" | "In Progress" | "Completed";
-  materials: {
-    materialId: string;
-    materialName: string;
-    requiredQty: number;
-    unit: string;
-    isAllocated: boolean;
-  }[];
-  customerProvidedMaterials?: string[];
-  technicianName?: string;
-}
-
-// --- Mock Data ---
-
-const mockProductionOrders: ProductionOrder[] = [
-  {
-    id: "PO-7001",
-    orderId: "ORD-9901",
-    itemId: "ITEM-1",
-    productName: "Golden Mandala Silk",
-    status: "Allocated",
-    materials: [
-      { materialId: "MAT1", materialName: "Cotton Premium XL", requiredQty: 55, unit: "m", isAllocated: true },
-      { materialId: "MAT2", materialName: "Cyan Ink", requiredQty: 750, unit: "g", isAllocated: true }
-    ],
-    technicianName: "Ahmed Ali"
+function mapToDisplayStatus(status: ApiOrderStatus): DisplayStatus {
+  switch (status) {
+    case "SUBMITTED":
+    case "INVOICE_PENDING":
+    case "PAYMENT_PENDING":
+    case "INVOICED":
+      return "Pending";
+    case "PAID":
+    case "IN_PRODUCTION":
+    case "READY":
+      return "In Progress";
+    case "COMPLETED":
+      return "Done";
+    case "CANCELLED":
+    case "DRAFT":
+      return "Cancelled";
+    default:
+      return "Pending";
   }
+}
+
+function fabricSourceLabel(source: "customer" | "factory" | "not_sure"): string {
+  switch (source) {
+    case "customer":
+      return "I Provide";
+    case "factory":
+      return "Factory Provides";
+    case "not_sure":
+      return "Not Sure";
+    default:
+      return source;
+  }
+}
+
+function orderTypeLabel(type: "sample" | "order"): string {
+  return type === "sample" ? "Sample" : "Order";
+}
+
+const statusOptions: { label: string; value: DisplayStatus | "All" }[] = [
+  { label: "All", value: "All" },
+  { label: "Pending", value: "Pending" },
+  { label: "In Progress", value: "In Progress" },
+  { label: "Done", value: "Done" },
+  { label: "Cancelled", value: "Cancelled" },
 ];
 
-const initialOrders: Order[] = [
-  // --- NEW ORDERS (Newly Arrived) ---
-  {
-    id: "ORD-9902",
-    date: "2024-02-12",
-    customerId: "C2",
-    customerName: "E-Textile Solutions",
-    customerType: "Business",
-    items: [
-      { 
-        id: "ITEM-2", 
-        productId: "PROD2", 
-        productName: "Minimal Linen Pattern", 
-        quantity: 100, 
-        unit: "m", 
-        pricePerUnit: 320, 
-        total: 32000,
-        attachments: [],
-        image: "https://images.unsplash.com/photo-1612453676150-b8ec1e89ce32?q=80&w=2070&auto=format&fit=crop"
-      }
-    ],
-    totalAmount: 32000,
-    status: "Pending Confirmation",
-    category: "New",
-    paymentStatus: "Unpaid"
-  },
-  {
-    id: "ORD-9905",
-    date: "2024-02-12",
-    customerId: "C5",
-    customerName: "Cairo Design Studio",
-    customerType: "Premium",
-    items: [
-      { 
-        id: "ITEM-5", 
-        productId: "PROD5", 
-        productName: "Custom Velvet Prints", 
-        quantity: 25, 
-        unit: "m", 
-        pricePerUnit: 550, 
-        total: 13750, 
-        attachments: ["design_v1.pdf"],
-        image: "https://images.unsplash.com/photo-1612012002164-96ba37039a83?q=80&w=2070&auto=format&fit=crop"
-      }
-    ],
-    totalAmount: 13750,
-    status: "Pending Confirmation",
-    category: "New",
-    paymentStatus: "Paid"
-  },
+type RequestVsOrderFilter = "All" | "Request" | "Order";
+type OrderTypeCategoryFilter = "All" | "Sample" | "Order";
 
-  // --- PENDING / ACTIVE (In Progress) ---
-  {
-    id: "ORD-9901",
-    date: "2024-02-12",
-    customerId: "C1",
-    customerName: "Mohamed Ali",
-    customerType: "Regular",
-    items: [
-      { 
-        id: "ITEM-1", 
-        productId: "PROD1", 
-        productName: "Golden Mandala Silk", 
-        quantity: 50, 
-        unit: "m", 
-        pricePerUnit: 450, 
-        total: 22500,
-        productionOrderId: "PO-7001",
-        attachments: ["mandala_ref.jpg"],
-        image: "https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?q=80&w=1972&auto=format&fit=crop"
-      }
-    ],
-    totalAmount: 22500,
-    status: "Order confirmed",
-    category: "Pending",
-    paymentStatus: "Unpaid"
-  },
-  {
-    id: "ORD-9903",
-    date: "2024-02-11",
-    customerId: "C3",
-    customerName: "Hassan El-Banna",
-    customerType: "Regular",
-    items: [
-      { 
-        id: "ITEM-3", 
-        productId: "PROD3", 
-        productName: "Cotton Canvas Roll", 
-        quantity: 200, 
-        unit: "m", 
-        pricePerUnit: 180, 
-        total: 36000, 
-        productionOrderId: "PO-7003", 
-        attachments: [],
-        image: "https://images.unsplash.com/photo-1596230526768-30588647acae?q=80&w=2070&auto=format&fit=crop"
-      }
-    ],
-    totalAmount: 36000,
-    status: "In Production",
-    category: "Pending",
-    paymentStatus: "Paid"
-  },
-  {
-    id: "ORD-9906",
-    date: "2024-02-11",
-    customerId: "C6",
-    customerName: "Alex Fashion Week",
-    customerType: "Business",
-    items: [
-      { 
-        id: "ITEM-6", 
-        productId: "PROD6", 
-        productName: "Neon Polyester", 
-        quantity: 500, 
-        unit: "m", 
-        pricePerUnit: 120, 
-        total: 60000, 
-        productionOrderId: "PO-7004", 
-        attachments: [],
-        image: "https://images.unsplash.com/photo-1616428902891-6228795da223?q=80&w=1974&auto=format&fit=crop"
-      }
-    ],
-    totalAmount: 60000,
-    status: "Ready for Pickup",
-    category: "Pending",
-    paymentStatus: "Partial"
-  },
-
-  // --- COMPLETED (Delivered) ---
-  {
-    id: "ORD-9899",
-    date: "2024-02-10",
-    customerId: "C4",
-    customerName: "Nile Textiles",
-    customerType: "Business",
-    items: [
-      { 
-        id: "ITEM-4", 
-        productId: "PROD4", 
-        productName: "Heavy Duty Canvas", 
-        quantity: 150, 
-        unit: "m", 
-        pricePerUnit: 200, 
-        total: 30000, 
-        attachments: [],
-        image: "https://images.unsplash.com/photo-1584917865442-de89df76afd3?q=80&w=2070&auto=format&fit=crop"
-      }
-    ],
-    totalAmount: 30000,
-    status: "Delivered",
-    category: "Completed",
-    paymentStatus: "Paid"
-  },
-  {
-    id: "ORD-9890",
-    date: "2024-02-09",
-    customerId: "C8",
-    customerName: "Zamalek Boutique",
-    customerType: "Premium",
-    items: [
-      { 
-        id: "ITEM-8", 
-        productId: "PROD8", 
-        productName: "Silk Chiffon", 
-        quantity: 60, 
-        unit: "m", 
-        pricePerUnit: 600, 
-        total: 36000, 
-        attachments: [],
-        image: "https://images.unsplash.com/photo-1509319117193-42d42741859c?q=80&w=2070&auto=format&fit=crop"
-      }
-    ],
-    totalAmount: 36000,
-    status: "Delivered",
-    category: "Completed",
-    paymentStatus: "Paid"
-  },
-
-  // --- CANCELLED ---
-  {
-    id: "ORD-9888",
-    date: "2024-02-08",
-    customerId: "C9",
-    customerName: "Ahmed Tarek",
-    customerType: "Regular",
-    items: [
-      { 
-        id: "ITEM-9", 
-        productId: "PROD9", 
-        productName: "Basic Cotton", 
-        quantity: 10, 
-        unit: "m", 
-        pricePerUnit: 100, 
-        total: 1000, 
-        attachments: [],
-        image: "https://images.unsplash.com/photo-1598532163257-52b1b48b4953?q=80&w=1932&auto=format&fit=crop"
-      }
-    ],
-    totalAmount: 1000,
-    status: "Cancelled",
-    category: "Cancelled",
-    paymentStatus: "Unpaid"
-  },
-
-  // --- RETURNS ---
-  {
-    id: "ORD-9885",
-    date: "2024-02-05",
-    customerId: "C10",
-    customerName: "Global Fabrics Ltd",
-    customerType: "Business",
-    items: [
-      { 
-        id: "ITEM-10", 
-        productId: "PROD10", 
-        productName: "Velvet Red", 
-        quantity: 100, 
-        unit: "m", 
-        pricePerUnit: 400, 
-        total: 40000, 
-        attachments: [],
-        image: "https://images.unsplash.com/photo-1543087903-1ac2ec7aa8c5?q=80&w=2098&auto=format&fit=crop"
-      }
-    ],
-    totalAmount: 40000,
-    status: "Returned",
-    category: "Returns",
-    paymentStatus: "Paid",
-    returnNote: "Color mismatch with sample provided."
-  }
+const requestVsOrderOptions: { label: string; value: RequestVsOrderFilter }[] = [
+  { label: "All", value: "All" },
+  { label: "Request / Wait quotation", value: "Request" },
+  { label: "Order", value: "Order" },
 ];
+
+const orderTypeCategoryOptions: { label: string; value: OrderTypeCategoryFilter }[] = [
+  { label: "All", value: "All" },
+  { label: "Sample", value: "Sample" },
+  { label: "Order", value: "Order" },
+];
+
+const defaultEmailSubject = (orderId: string) => `Quotation for your order ${orderId}`;
+const defaultEmailBody = (customerName: string, orderId: string, quantity: number, quotationAmount: string, validity: string) =>
+  `Dear ${customerName},\n\nThank you for your request (Order ${orderId}).\n\nWe are pleased to provide the following quotation:\n\n• Quantity: ${quantity} m\n• Quoted amount: ${quotationAmount} EGP\n• Validity: ${validity}\n\nPlease let us know if you would like to proceed or if you have any questions.\n\nBest regards`;
+const defaultWhatsAppMessage = (customerName: string, orderId: string, quantity: number, quotationAmount: string, validity: string) =>
+  `Hi ${customerName},\n\nQuotation for order ${orderId}:\n• Quantity: ${quantity} m\n• Amount: ${quotationAmount} EGP\n• Validity: ${validity}\n\nReply to confirm or ask any questions.`;
 
 const Orders = () => {
-  const [orders, setOrders] = useState<Order[]>(initialOrders);
-  const [activeCategory, setActiveCategory] = useState<OrderCategory>("New");
   const [searchTerm, setSearchTerm] = useState("");
-  
-  // UI State
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [statusFilter, setStatusFilter] = useState<DisplayStatus | "All">("All");
+  const [requestVsOrderFilter, setRequestVsOrderFilter] = useState<RequestVsOrderFilter>("All");
+  const [orderTypeCategoryFilter, setOrderTypeCategoryFilter] = useState<OrderTypeCategoryFilter>("All");
+  const [deleteConfirmOrder, setDeleteConfirmOrder] = useState<ApiOrder | null>(null);
+  const [whatsappError, setWhatsappError] = useState("");
+  const [selectedOrder, setSelectedOrder] = useState<ApiOrder | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [isProductionSheetOpen, setIsProductionSheetOpen] = useState(false);
-  const [activeProductionItem, setActiveProductionItem] = useState<OrderItem | null>(null);
-
-  const filteredOrders = orders.filter(o => {
-    const matchesSearch = o.id.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          o.customerName.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = o.category === activeCategory;
-    return matchesSearch && matchesCategory;
-  });
-
-  const getStatusColor = (status: OrderStatus) => {
-    switch (status) {
-      case "Pending Confirmation": return "bg-blue-50 text-blue-600 border-blue-100";
-      case "Order confirmed": return "bg-indigo-50 text-indigo-600 border-indigo-100";
-      case "In Production": return "bg-amber-50 text-amber-600 border-amber-100";
-      case "Ready for Pickup": return "bg-emerald-50 text-emerald-600 border-emerald-100";
-      case "Delivered": return "bg-emerald-600 text-white border-transparent";
-      case "Cancelled": return "bg-red-50 text-red-600 border-red-100";
-      case "Returned": return "bg-slate-900 text-white border-transparent";
-      default: return "bg-slate-50 text-slate-400";
-    }
-  };
-
-  const handleConfirmOrder = (orderId: string) => {
-    setOrders(orders.map(o => 
-      o.id === orderId ? { ...o, status: "Order confirmed", category: "Pending" } : o
-    ));
-    if (selectedOrder?.id === orderId) {
-      setSelectedOrder(prev => prev ? { ...prev, status: "Order confirmed", category: "Pending" } : null);
-    }
-  };
-
-  const handleReturnOrder = (orderId: string, note: string) => {
-     setOrders(orders.map(o => 
-       o.id === orderId ? { ...o, status: "Returned", category: "Returns", returnNote: note } : o
-     ));
-     setIsDetailOpen(false);
-  };
-
-  // --- Add Order Logic ---
+  const [refresh, setRefresh] = useState(0);
+  const [quotationChannel, setQuotationChannel] = useState<"email" | "whatsapp">("email");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [whatsappPhone, setWhatsappPhone] = useState("");
+  const [whatsappMessage, setWhatsappMessage] = useState("");
+  const [quotationAmount, setQuotationAmount] = useState("");
+  const [quotationValidity, setQuotationValidity] = useState("7 days");
+  const [copied, setCopied] = useState(false);
   const [isAddOrderOpen, setIsAddOrderOpen] = useState(false);
-  const [newOrder, setNewOrder] = useState<{
-    customer: string;
-    product: string;
-    amount: string;
-    status: OrderStatus;
-  }>({
-    customer: "",
-    product: "",
-    amount: "",
-    status: "Pending Confirmation"
-  });
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editQuantity, setEditQuantity] = useState(1);
+  const [editNotes, setEditNotes] = useState("");
+  const [editStatus, setEditStatus] = useState<ApiOrderStatus>("SUBMITTED");
+  const [addUserId, setAddUserId] = useState("");
+  const [addPresetId, setAddPresetId] = useState("");
+  const [addFabricType, setAddFabricType] = useState<"sublimation" | "natural">("sublimation");
+  const [addOrderType, setAddOrderType] = useState<"sample" | "order">("order");
+  const [addFabricSource, setAddFabricSource] = useState<"customer" | "factory" | "not_sure">("factory");
+  const [addFactoryFabricId, setAddFactoryFabricId] = useState("");
+  const [addQuantity, setAddQuantity] = useState(1);
+  const [addNotes, setAddNotes] = useState("");
+  const [addStatus, setAddStatus] = useState<ApiOrderStatus>("SUBMITTED");
 
-  const handleCreateOrder = () => {
-    if (!newOrder.customer || !newOrder.product || !newOrder.amount) return;
+  const allOrders = useMemo(() => ordersApi.getAllOrders(), [refresh]);
+  const allUsers = useMemo(() => authApi.getAllUsers(), []);
+  const presets = useMemo(() => ordersApi.getPresetDesigns(), []);
+  const factoryFabricsList = useMemo(() => ordersApi.getFactoryFabrics(), []);
 
-    const order: Order = {
-      id: `ORD-${Math.floor(Math.random() * 9000) + 1000}`,
-      date: new Date().toLocaleDateString('en-CA'),
-      customerId: `C${Math.floor(Math.random() * 100)}`,
-      customerName: newOrder.customer,
-      customerType: "Regular", // Default
-      items: [{
-        id: `ITEM-${Math.floor(Math.random() * 1000)}`,
-        productId: "GENERIC",
-        productName: newOrder.product,
-        quantity: 1,
-        unit: "qty",
-        pricePerUnit: parseFloat(newOrder.amount),
-        total: parseFloat(newOrder.amount),
-        attachments: []
-      }],
-      totalAmount: parseFloat(newOrder.amount),
-      status: newOrder.status,
-      category: "New",
-      paymentStatus: "Unpaid"
-    };
+  // Pre-fill quotation templates when opening a quotation request (once per order)
+  const itemForQuotation = selectedOrder?.items?.[0];
+  const isQuotationRequest = selectedOrder && (selectedOrder.id.startsWith("quot-") || itemForQuotation?.fabricChoice?.fabricSource === "customer" || itemForQuotation?.fabricChoice?.fabricSource === "not_sure");
+  React.useEffect(() => {
+    if (!selectedOrder || !itemForQuotation || !isQuotationRequest) return;
+    const cust = authApi.getUserById(selectedOrder.userId);
+    const name = cust?.name ?? "Customer";
+    const qty = itemForQuotation.quantity;
+    setEmailSubject(defaultEmailSubject(selectedOrder.id));
+    setEmailBody(defaultEmailBody(name, selectedOrder.id, qty, "—", "7 days"));
+    setWhatsappMessage(defaultWhatsAppMessage(name, selectedOrder.id, qty, "—", "7 days"));
+    setQuotationAmount("");
+    setQuotationValidity("7 days");
+  }, [selectedOrder?.id]);
 
-    setOrders([order, ...orders]);
-    setIsAddOrderOpen(false);
-    setNewOrder({ customer: "", product: "", amount: "", status: "Pending Confirmation" });
+  const handleOpenMail = () => {
+    if (!selectedOrder || !itemForQuotation) return;
+    const cust = authApi.getUserById(selectedOrder.userId);
+    const to = cust?.email ?? "";
+    const subj = encodeURIComponent(emailSubject);
+    const body = encodeURIComponent(emailBody);
+    window.open(`mailto:${to}?subject=${subj}&body=${body}`, "_blank");
   };
+
+  const handleCopyEmail = () => {
+    const text = `Subject: ${emailSubject}\n\n${emailBody}`;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const handleOpenWhatsApp = () => {
+    setWhatsappError("");
+    const phone = whatsappPhone.replace(/\D/g, "");
+    if (!phone) {
+      setWhatsappError("Please enter customer WhatsApp number with country code (e.g. 201234567890).");
+      return;
+    }
+    const text = encodeURIComponent(whatsappMessage);
+    window.open(`https://wa.me/${phone}?text=${text}`, "_blank");
+  };
+
+  const handleCopyWhatsApp = () => {
+    navigator.clipboard.writeText(whatsappMessage).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const refreshQuotationTemplates = () => {
+    if (!selectedOrder || !itemForQuotation || !isQuotationRequest) return;
+    const cust = authApi.getUserById(selectedOrder.userId);
+    const name = cust?.name ?? "Customer";
+    const qty = itemForQuotation.quantity;
+    const amount = quotationAmount || "—";
+    const validity = quotationValidity || "7 days";
+    setEmailSubject(defaultEmailSubject(selectedOrder.id));
+    setEmailBody(defaultEmailBody(name, selectedOrder.id, qty, amount, validity));
+    setWhatsappMessage(defaultWhatsAppMessage(name, selectedOrder.id, qty, amount, validity));
+  };
+
+  const filteredOrders = useMemo(() => {
+    return allOrders.filter((o) => {
+      const displayStatus = mapToDisplayStatus(o.status);
+      const matchesStatus = statusFilter === "All" || displayStatus === statusFilter;
+      const customer = authApi.getUserById(o.userId);
+      const name = customer?.name ?? o.userId;
+      const email = customer?.email ?? "";
+      const matchesSearch =
+        o.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        email.toLowerCase().includes(searchTerm.toLowerCase());
+      const firstItem = o.items?.[0];
+      const fabricSource = firstItem?.fabricChoice?.fabricSource;
+      const isRequest = o.id.startsWith("quot-") || fabricSource === "customer" || fabricSource === "not_sure";
+      const matchesRequestVsOrder =
+        requestVsOrderFilter === "All" ||
+        (requestVsOrderFilter === "Request" && isRequest) ||
+        (requestVsOrderFilter === "Order" && !isRequest);
+      const orderType = firstItem?.fabricChoice?.orderType ?? "order";
+      const matchesOrderTypeCategory =
+        orderTypeCategoryFilter === "All" ||
+        (orderTypeCategoryFilter === "Sample" && orderType === "sample") ||
+        (orderTypeCategoryFilter === "Order" && orderType === "order");
+      return matchesStatus && matchesSearch && matchesRequestVsOrder && matchesOrderTypeCategory;
+    });
+  }, [allOrders, statusFilter, searchTerm, requestVsOrderFilter, orderTypeCategoryFilter]);
+
+  const getStatusColor = (status: DisplayStatus) => {
+    switch (status) {
+      case "Pending":
+        return "bg-amber-50 text-amber-600 border-amber-100";
+      case "In Progress":
+        return "bg-blue-50 text-blue-600 border-blue-100";
+      case "Done":
+        return "bg-emerald-50 text-emerald-600 border-emerald-100";
+      case "Cancelled":
+        return "bg-red-50 text-red-600 border-red-100";
+      default:
+        return "bg-slate-50 text-slate-500 border-slate-100";
+    }
+  };
+
+  const handleStatusChange = (orderId: string, newStatus: ApiOrderStatus) => {
+    ordersApi.updateOrderStatus(orderId, newStatus);
+    setRefresh((r) => r + 1);
+    setSelectedOrder((prev) => {
+      if (!prev || prev.id !== orderId) return prev;
+      return { ...prev, status: newStatus, updatedAt: new Date().toISOString() };
+    });
+  };
+
+  const handleDeleteOrder = () => {
+    if (selectedOrder) setDeleteConfirmOrder(selectedOrder);
+  };
+
+  const confirmDeleteOrder = () => {
+    if (!deleteConfirmOrder) return;
+    ordersApi.deleteOrder(deleteConfirmOrder.id);
+    setRefresh((r) => r + 1);
+    setSelectedOrder(null);
+    setIsDetailOpen(false);
+    setDeleteConfirmOrder(null);
+  };
+
+  const handleSaveEdit = () => {
+    if (!selectedOrder) return;
+    ordersApi.updateOrder(selectedOrder.id, { status: editStatus, quantity: editQuantity, notes: editNotes });
+    setRefresh((r) => r + 1);
+    setSelectedOrder((prev) => {
+      if (!prev || prev.id !== selectedOrder.id) return prev;
+      const next = { ...prev, status: editStatus, updatedAt: new Date().toISOString() };
+      if (prev.items[0]) {
+        next.items = [{ ...prev.items[0], quantity: editQuantity, notes: editNotes, totalPrice: prev.items[0].unitPrice * editQuantity }];
+        next.totalAmount = next.items[0].totalPrice;
+      }
+      return next;
+    });
+    setIsEditOpen(false);
+  };
+
+  const openEdit = () => {
+    if (!selectedOrder?.items?.[0]) return;
+    setEditQuantity(selectedOrder.items[0].quantity);
+    setEditNotes(selectedOrder.items[0].notes ?? "");
+    setEditStatus(selectedOrder.status);
+    setIsEditOpen(true);
+  };
+
+  const handleAddOrder = () => {
+    if (!addUserId || !addPresetId) return;
+    const fabricChoice: import("@/types/order").FabricChoice = {
+      fabricType: addFabricType,
+      orderType: addOrderType,
+      fabricSource: addFabricSource,
+      ...(addFabricSource === "factory" && addFactoryFabricId ? { factoryFabricId: addFactoryFabricId } : {}),
+    };
+    const designChoice: import("@/types/order").DesignChoice = { source: "existing", presetId: addPresetId };
+    ordersApi.createOrderAdmin({
+      userId: addUserId,
+      designChoice,
+      fabricChoice,
+      quantity: addQuantity,
+      notes: addNotes,
+      status: addStatus,
+    });
+    setRefresh((r) => r + 1);
+    setIsAddOrderOpen(false);
+    setAddUserId("");
+    setAddPresetId("");
+    setAddQuantity(1);
+    setAddNotes("");
+  };
+
+  const item = selectedOrder?.items?.[0];
+  const isQuotation = selectedOrder?.id.startsWith("quot-") ?? false;
+  const fabricSource = item?.fabricChoice?.fabricSource;
+  const waitsQuotation = fabricSource === "customer" || fabricSource === "not_sure";
+  const customer = selectedOrder ? authApi.getUserById(selectedOrder.userId) : null;
+  const factoryFabric =
+    item?.fabricChoice?.factoryFabricId != null
+      ? ordersApi.getFactoryFabricById(item.fabricChoice.factoryFabricId)
+      : null;
 
   return (
     <ManagementLayout>
       <div className="space-y-8 animate-fade-in-up">
-        {/* Header Section */}
         <div className="flex flex-col lg:flex-row gap-6 justify-between items-start lg:items-center">
           <div className="space-y-1">
             <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">
-              Omni-Channel <span className="text-primary underline decoration-accent decoration-4 underline-offset-4">Orders</span>
+              Orders & <span className="text-primary underline decoration-accent decoration-4 underline-offset-4">Quotations</span>
             </h1>
-            <p className="text-slate-400 text-sm font-medium italic">Synchronizing factory production with customer-facing web demand.</p>
+            <p className="text-slate-400 text-sm font-medium italic">Orders and quotation requests from the shop. Filter by request vs order and by sample vs order.</p>
           </div>
-
-          <div className="flex items-center gap-4 w-full lg:w-auto">
-             <div className="relative flex-1 lg:w-80">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input 
-                  type="text" 
-                  placeholder="Order ID / Customer..." 
-                  className="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[22px] shadow-sm text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-             </div>
-             <button 
-                onClick={() => setIsAddOrderOpen(true)}
-                className="bg-primary text-white p-4 lg:px-8 rounded-[22px] font-black text-xs tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2"
-             >
-                <PlusCircle size={20} />
-                <span className="hidden lg:inline uppercase">Direct Order</span>
-             </button>
+          <div className="flex flex-col sm:flex-row gap-3 flex-1 lg:flex-initial">
+            <div className="relative flex-1 lg:w-80 max-w-full">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input
+                type="text"
+                placeholder="Order ID / Customer..."
+                className="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[22px] shadow-sm text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsAddOrderOpen(true)}
+              className="flex items-center justify-center gap-2 px-6 py-4 bg-primary text-white rounded-[22px] font-black text-xs tracking-widest uppercase shadow-lg shadow-primary/20 hover:opacity-90 whitespace-nowrap"
+            >
+              <Plus size={20} /> Add order
+            </button>
           </div>
         </div>
 
-        {/* Status Pipeline Navigation */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-           {[
-             { label: "New", category: "New", icon: Clock, color: "text-blue-500", bg: "bg-blue-50" },
-             { label: "Pending", category: "Pending", icon: Cpu, color: "text-amber-500", bg: "bg-amber-50" },
-             { label: "Completed", category: "Completed", icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-50" },
-             { label: "Cancelled", category: "Cancelled", icon: XCircle, color: "text-red-500", bg: "bg-red-50" },
-             { label: "Returns", category: "Returns", icon: RotateCcw, color: "text-slate-900", bg: "bg-slate-100" }
-           ].map((tab) => (
-             <button 
-               key={tab.category}
-               onClick={() => setActiveCategory(tab.category as OrderCategory)}
-               className={cn(
-                 "p-6 rounded-[35px] border transition-all flex flex-col items-center gap-2 group",
-                 activeCategory === tab.category 
-                  ? "bg-slate-900 border-slate-900 shadow-2xl" 
-                  : "bg-white border-slate-100 hover:border-primary/20"
-               )}
-             >
-                <div className={cn(
-                  "w-10 h-10 rounded-2xl flex items-center justify-center mb-1 group-hover:scale-110 transition-transform",
-                   activeCategory === tab.category ? "bg-white/10 text-white" : `${tab.bg} ${tab.color}`
-                )}>
-                  <tab.icon size={20} />
-                </div>
-                <span className={cn(
-                  "text-[10px] font-black uppercase tracking-widest",
-                  activeCategory === tab.category ? "text-slate-400" : "text-slate-400"
-                )}>{tab.label}</span>
-                <span className={cn(
-                  "text-xl font-black",
-                  activeCategory === tab.category ? "text-white" : "text-slate-900"
-                )}>{orders.filter(o => o.category === tab.category).length}</span>
-             </button>
-           ))}
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest self-center mr-1">Status:</span>
+            {statusOptions.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setStatusFilter(opt.value as DisplayStatus | "All")}
+                className={cn(
+                  "px-5 py-2.5 rounded-[22px] border text-sm font-bold uppercase tracking-widest transition-all",
+                  statusFilter === opt.value
+                    ? "bg-primary text-white border-primary shadow-lg shadow-primary/20"
+                    : "bg-white border-slate-100 text-slate-500 hover:border-primary/30"
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest self-center mr-1">Category:</span>
+            {requestVsOrderOptions.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setRequestVsOrderFilter(opt.value)}
+                className={cn(
+                  "px-4 py-2 rounded-xl border text-xs font-bold uppercase transition-all",
+                  requestVsOrderFilter === opt.value
+                    ? "bg-slate-800 text-white border-slate-800"
+                    : "bg-white border-slate-100 text-slate-500 hover:border-slate-300"
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+            <span className="text-slate-300 mx-1">|</span>
+            {orderTypeCategoryOptions.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setOrderTypeCategoryFilter(opt.value)}
+                className={cn(
+                  "px-4 py-2 rounded-xl border text-xs font-bold uppercase transition-all",
+                  orderTypeCategoryFilter === opt.value
+                    ? "bg-slate-800 text-white border-slate-800"
+                    : "bg-white border-slate-100 text-slate-500 hover:border-slate-300"
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Orders Table */}
-        <div className="bg-white rounded-[45px] border border-slate-100 shadow-sm overflow-hidden min-h-[500px]">
-           <table className="w-full text-left border-collapse">
+        <div className="bg-white rounded-[45px] border border-slate-100 shadow-sm overflow-hidden min-h-[400px]">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
               <thead>
-                 <tr className="bg-slate-50">
-                    <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Master / Sequence</th>
-                    <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer Entity</th>
-                    <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Cart Summary</th>
-                    <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Financials</th>
-                    <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Lifecycle</th>
-                    <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
-                 </tr>
+                <tr className="bg-slate-50">
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Order / Date</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Type</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fabric source</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Amount</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Status</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
+                </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                 {filteredOrders.map(order => (
-                   <tr 
-                     key={order.id} 
-                     onClick={() => {
+                {filteredOrders.map((order) => {
+                  const cust = authApi.getUserById(order.userId);
+                  const displayStatus = mapToDisplayStatus(order.status);
+                  const firstItem = order.items[0];
+                  const orderType = firstItem?.fabricChoice?.orderType ?? "order";
+                  const fabricSourceType = firstItem?.fabricChoice?.fabricSource;
+                  const isQuot = order.id.startsWith("quot-") || fabricSourceType === "customer" || fabricSourceType === "not_sure";
+                  return (
+                    <tr
+                      key={order.id}
+                      onClick={() => {
                         setSelectedOrder(order);
                         setIsDetailOpen(true);
-                     }}
-                     className="hover:bg-slate-50/50 transition-all group cursor-pointer"
-                   >
-                      <td className="px-8 py-8">
-                         <div className="flex flex-col">
-                            <span className="text-sm font-black text-slate-900 tracking-tight uppercase">{order.id}</span>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">{order.date}</span>
-                         </div>
+                      }}
+                      className="hover:bg-slate-50/50 transition-all group cursor-pointer"
+                    >
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-black text-slate-900 tracking-tight uppercase">{order.id}</span>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">
+                            {new Date(order.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
                       </td>
-                      <td className="px-8 py-8">
-                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-400 border border-slate-200 shadow-sm">
-                               {order.customerName[0]}
-                            </div>
-                            <div className="flex flex-col">
-                               <span className="text-sm font-black text-slate-700 uppercase leading-none">{order.customerName}</span>
-                               <span className="text-[9px] font-black text-primary uppercase mt-1 tracking-widest">{order.customerType} SCALE</span>
-                            </div>
-                         </div>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-400 border border-slate-200">
+                            {(cust?.name ?? order.userId)[0]}
+                          </div>
+                          <div>
+                            <span className="text-sm font-black text-slate-700 uppercase leading-none">{cust?.name ?? order.userId}</span>
+                            <span className="block text-[9px] font-bold text-slate-400">{cust?.email ?? "—"}</span>
+                          </div>
+                        </div>
                       </td>
-                      <td className="px-8 py-8">
-                         <div className="flex flex-col gap-1">
-                            {order.items.map((item, idx) => (
-                              <div key={idx} className="flex items-center gap-2">
-                                 {item.image && <img src={item.image} alt="" className="w-6 h-6 rounded-md object-cover shadow-sm bg-slate-50 border border-slate-100" />}
-                                 <span className="text-xs font-black text-slate-500 uppercase">{item.productName}</span>
-                                 <span className="text-[10px] font-bold text-slate-400">x{item.quantity} {item.unit}</span>
-                              </div>
-                            ))}
-                         </div>
+                      <td className="px-6 py-4">
+                        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase border bg-slate-50 text-slate-600 border-slate-100">
+                          {orderTypeLabel(orderType)}
+                        </span>
                       </td>
-                      <td className="px-8 py-8">
-                         <div className="flex flex-col">
-                            <span className="text-lg font-black text-slate-900 tracking-tighter">{order.totalAmount.toLocaleString()} <span className="text-[10px] text-slate-400">EGP</span></span>
-                            <span className={cn(
-                              "text-[10px] font-black uppercase tracking-[0.15em]",
-                              order.paymentStatus === "Paid" ? "text-emerald-500" : "text-red-400"
-                            )}>{order.paymentStatus}</span>
-                         </div>
-                      </td>
-                      <td className="px-8 py-8">
-                         <div className="flex justify-center">
-                            <span className={cn(
-                              "px-5 py-2 rounded-full text-[9px] font-black uppercase tracking-widest border shadow-sm",
-                              getStatusColor(order.status)
-                            )}>
-                               {order.status}
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-xs font-black text-slate-600 uppercase">
+                            {fabricSourceType ? fabricSourceLabel(fabricSourceType) : "—"}
+                          </span>
+                          {isQuot && (
+                            <span className="inline-flex items-center gap-1 text-[9px] font-black text-amber-600 uppercase">
+                              <AlertCircle size={12} /> Quotation request
                             </span>
-                         </div>
+                          )}
+                        </div>
                       </td>
-                      <td className="px-8 py-8 text-right">
-                         <button className="p-3 bg-white rounded-2xl text-slate-300 hover:text-primary transition-all shadow-sm border border-slate-100 group-hover:border-primary/20">
-                            <ChevronRight size={18} />
-                         </button>
+                      <td className="px-6 py-4">
+                        <span className="text-sm font-black text-slate-900">
+                          {order.totalAmount > 0 ? `${order.totalAmount.toLocaleString()} EGP` : "—"}
+                        </span>
                       </td>
-                   </tr>
-                 ))}
+                      <td className="px-6 py-4 text-center">
+                        <span className={cn("px-3 py-1.5 rounded-full text-[9px] font-black uppercase border", getStatusColor(displayStatus))}>
+                          {displayStatus}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <button className="p-3 bg-white rounded-2xl text-slate-300 hover:text-primary transition-all shadow-sm border border-slate-100">
+                          <ChevronRight size={18} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
-           </table>
-           {filteredOrders.length === 0 && (
-             <div className="p-32 flex flex-col items-center justify-center text-slate-200 opacity-30">
-                <ShoppingBag size={80} className="mb-4" />
-                <p className="text-xs font-black uppercase tracking-widest">No matching orders in the pipeline</p>
-             </div>
-           )}
+            </table>
+          </div>
+          {filteredOrders.length === 0 && (
+            <div className="p-32 flex flex-col items-center justify-center text-slate-300">
+              <ShoppingBag size={80} className="mb-4" />
+              <p className="text-xs font-black uppercase tracking-widest">No orders match the filter</p>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* --- SIDE SHEETS --- */}
-
-      {/* 1. Order Detail Insight Sheet */}
+      {/* Order detail sheet – full breakdown from form */}
       <Sheet open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-        <SheetContent className="w-full sm:max-w-5xl p-0 border-none flex flex-col bg-slate-50">
-          {selectedOrder && (
+        <SheetContent className="w-full sm:max-w-2xl p-0 border-none flex flex-col bg-slate-50 overflow-y-auto">
+          {selectedOrder && item && (
             <>
-              <div className="bg-white p-12 relative border-b border-slate-100 shadow-sm overflow-hidden">
-                 {/* Background Accent */}
-                 <div className="absolute top-0 right-0 p-20 opacity-5 grayscale pointer-events-none">
-                    <ShoppingBag size={240} />
-                 </div>
-
-                 <button onClick={() => setIsDetailOpen(false)} className="absolute top-8 right-8 p-3 hover:bg-slate-100 rounded-full transition-all text-slate-300 z-10">
-                    <X size={24} />
-                 </button>
-
-                 <div className="relative z-10 flex flex-col md:flex-row items-center md:items-start gap-12">
-                    <div className={cn(
-                      "w-48 h-48 rounded-[60px] flex flex-col items-center justify-center text-center p-6 shadow-2xl transition-all",
-                      getStatusColor(selectedOrder.status)
-                    )}>
-                       <ShoppingBag size={48} className="mb-3" />
-                       <span className="text-[10px] font-black uppercase tracking-tighter opacity-60 leading-tight">Master Order</span>
-                       <span className="text-2xl font-black tracking-tighter">{selectedOrder.id.split('-')[1]}</span>
+              <div className="bg-white p-8 border-b border-slate-100 sticky top-0 z-10">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight">{selectedOrder.id}</h2>
+                    <p className="text-slate-500 text-sm mt-1">
+                      {new Date(selectedOrder.createdAt).toLocaleString()}
+                    </p>
+                    <div className="flex flex-wrap gap-2 mt-3">
+                      <span className={cn("px-3 py-1 rounded-full text-[10px] font-black uppercase border", getStatusColor(mapToDisplayStatus(selectedOrder.status)))}>
+                        {mapToDisplayStatus(selectedOrder.status)}
+                      </span>
+                      <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase border bg-slate-100 text-slate-600 border-slate-200">
+                        {orderTypeLabel(item.fabricChoice.orderType)}
+                      </span>
+                      <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase border bg-slate-100 text-slate-600 border-slate-200">
+                        {fabricSourceLabel(item.fabricChoice.fabricSource)}
+                      </span>
+                      {(isQuotation || waitsQuotation) && (
+                        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase border bg-amber-50 text-amber-700 border-amber-200 flex items-center gap-1">
+                          <AlertCircle size={12} /> Waiting for quotation
+                        </span>
+                      )}
                     </div>
-
-                    <div className="flex-1 space-y-6 pt-4 text-center md:text-left">
-                       <div className="flex flex-wrap items-center justify-center md:justify-start gap-4">
-                          <h2 className="text-4xl font-black text-slate-900 uppercase tracking-tighter leading-none">{selectedOrder.customerName}</h2>
-                          <span className="px-5 py-2 bg-slate-100 text-slate-400 rounded-full text-[10px] font-black uppercase tracking-widest border border-slate-200">
-                             {selectedOrder.customerType} Profile
-                          </span>
-                       </div>
-                       
-                       <div className="flex flex-wrap items-center justify-center md:justify-start gap-10 font-black text-sm text-slate-400 uppercase tracking-tight">
-                          <div className="flex items-center gap-2"><Calendar size={16} className="text-primary" /> {selectedOrder.date}</div>
-                          <div className="flex items-center gap-2"><LayoutGrid size={16} className="text-accent" /> {selectedOrder.items.length} Products</div>
-                          <div className="flex items-center gap-2"><Banknote size={16} className="text-emerald-500" /> {selectedOrder.paymentStatus}</div>
-                       </div>
-
-                       <div className="flex flex-wrap justify-center md:justify-start gap-3">
-                          {selectedOrder.status === "Pending Confirmation" && (
-                            <button 
-                              onClick={() => handleConfirmOrder(selectedOrder.id)}
-                              className="px-8 py-4 bg-primary text-white rounded-[20px] font-black text-[11px] tracking-widest hover:scale-105 transition-all shadow-xl shadow-primary/20 uppercase"
-                            >
-                               Confirm Order Lifecycle
-                            </button>
-                          )}
-                          {selectedOrder.category === "Completed" && (
-                             <button className="px-8 py-4 bg-slate-900 text-white rounded-[20px] font-black text-[11px] tracking-widest hover:scale-105 transition-all shadow-xl uppercase">
-                                Process Return Log
-                             </button>
-                          )}
-                       </div>
-                    </div>
-                 </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={openEdit} className="p-2 hover:bg-slate-100 rounded-full text-slate-600" title="Edit order">
+                      <Pencil size={20} />
+                    </button>
+                    <button type="button" onClick={handleDeleteOrder} className="p-2 hover:bg-red-50 rounded-full text-red-500" title="Delete order">
+                      <Trash2 size={20} />
+                    </button>
+                    <button onClick={() => setIsDetailOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400">
+                      <X size={24} />
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto px-12 py-10 space-y-12">
-                 {/* Production Items Grid */}
-                 <div className="space-y-6">
-                    <div className="flex items-center justify-between">
-                       <h5 className="text-[11px] font-black text-slate-900 uppercase tracking-[0.2em] ml-2">Itemized Pipeline</h5>
-                       <span className="text-[10px] font-bold text-slate-400">Sync with Production Orders</span>
+              {isEditOpen && (
+                <div className="mx-8 mt-4 p-4 rounded-xl bg-white border-2 border-primary/20 space-y-4">
+                  <h4 className="text-sm font-black text-slate-700 uppercase">Edit order</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase">Quantity (m)</label>
+                      <input type="number" min={1} value={editQuantity} onChange={(e) => setEditQuantity(Number(e.target.value) || 1)} className="w-full mt-1 px-3 py-2 rounded-lg border border-slate-200 text-sm" />
                     </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase">Status</label>
+                      <select value={editStatus} onChange={(e) => setEditStatus(e.target.value as ApiOrderStatus)} className="w-full mt-1 px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                        <option value="SUBMITTED">Pending</option>
+                        <option value="IN_PRODUCTION">In Progress</option>
+                        <option value="COMPLETED">Done</option>
+                        <option value="CANCELLED">Cancelled</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase">Notes</label>
+                    <textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={2} className="w-full mt-1 px-3 py-2 rounded-lg border border-slate-200 text-sm resize-none" />
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setIsEditOpen(false)} className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-bold text-slate-600">Cancel</button>
+                    <button type="button" onClick={handleSaveEdit} className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-bold">Save changes</button>
+                  </div>
+                </div>
+              )}
 
-                    <div className="grid grid-cols-1 gap-6">
-                       {selectedOrder.items.map((item, idx) => (
-                         <div key={idx} className="bg-white p-8 rounded-[45px] border border-slate-100 shadow-sm flex flex-col md:flex-row items-center gap-10 group overflow-hidden relative">
-                            {/* Material Progress Bar */}
-                            <div className="absolute bottom-0 left-0 h-1.5 bg-primary/10 w-full overflow-hidden">
-                               <div className={cn("h-full transition-all duration-1000", item.productionOrderId ? "w-full bg-emerald-500" : "w-1/3 bg-amber-500")}></div>
+              <div className="flex-1 p-8 space-y-6">
+                {/* Customer */}
+                <section className="bg-white p-6 rounded-2xl border border-slate-100">
+                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                    <Users size={14} /> Customer
+                  </h3>
+                  <p className="font-bold text-slate-900">{customer?.name ?? selectedOrder.userId}</p>
+                  <p className="text-sm text-slate-500">{customer?.email ?? "—"}</p>
+                </section>
+
+                {/* Design – show all sources with preview, view, download */}
+                <section className="bg-white p-6 rounded-2xl border border-slate-100">
+                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                    <Layers size={14} /> Design
+                  </h3>
+                  <p className="text-sm text-slate-700 mb-4">
+                    Source: <span className="font-bold uppercase">{item.designChoice.source.replace(/_/g, " ")}</span>
+                    {item.designChoice.presetId && (
+                      <> · {ordersApi.getPresetById(item.designChoice.presetId)?.name ?? item.designChoice.presetId}</>
+                    )}
+                    {item.designChoice.uploadFileName && <> · {item.designChoice.uploadFileName}</>}
+                    {item.designChoice.repeatOrderId && <> · Repeat of order {item.designChoice.repeatOrderId}</>}
+                    {item.designChoice.myLibraryDesignId && (
+                      <> · {item.myLibraryDesignSnapshot?.name ?? item.designChoice.myLibraryDesignId}</>
+                    )}
+                  </p>
+
+                  <div className="space-y-4">
+                    {/* Existing (preset) */}
+                    {item.designChoice.source === "existing" && item.designChoice.presetId && (() => {
+                      const preset = ordersApi.getPresetById(item.designChoice.presetId!);
+                      if (!preset) return null;
+                      const imgSrc = typeof preset.imageUrl === "string" ? preset.imageUrl : (preset as { imageUrl: string }).imageUrl;
+                      return (
+                        <div className="flex flex-wrap items-start gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100">
+                          <div className="w-28 h-28 rounded-lg overflow-hidden border border-slate-200 bg-white shrink-0">
+                            <img src={imgSrc} alt={preset.name} className="w-full h-full object-cover" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold text-slate-900">{preset.name}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">{preset.description}</p>
+                            <div className="flex flex-wrap gap-2 mt-3">
+                              <a href={imgSrc} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold hover:opacity-90">
+                                <ExternalLink size={14} /> View full size
+                              </a>
+                              <a href={imgSrc} download={preset.name.replace(/\s+/g, "-") + ".jpg"} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50">
+                                <Download size={14} /> Download
+                              </a>
                             </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
 
-                            {item.image ? (
-                                <img src={item.image} alt={item.productName} className="w-24 h-24 object-cover rounded-[30px] shadow-md group-hover:scale-105 transition-transform duration-500" />
-                            ) : (
-                                <div className="w-24 h-24 bg-slate-50 rounded-[30px] flex items-center justify-center text-slate-200 group-hover:scale-105 transition-transform duration-500">
-                                   <Palette size={40} />
+                    {/* Upload – all files */}
+                    {(item.designChoice.source === "upload" && (item.uploadSnapshots?.length ? item.uploadSnapshots : item.designChoice.uploadFileName)) && (
+                      <div className="space-y-3">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Uploaded design(s)</p>
+                        {item.uploadSnapshots && item.uploadSnapshots.length > 0 ? (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            {item.uploadSnapshots.map((snap, idx) => (
+                              <div key={idx} className="flex flex-col gap-2 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                                <div className="aspect-square rounded-lg overflow-hidden border border-slate-200 bg-white">
+                                  <img src={snap.dataUrl} alt={snap.fileName} className="w-full h-full object-contain" />
                                 </div>
-                            )}
-
-                            <div className="flex-1 text-center md:text-left space-y-2">
-                               <div className="flex items-center justify-center md:justify-start gap-3">
-                                  <h4 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">{item.productName}</h4>
-                                  <span className="text-[10px] font-black text-slate-300">SKU-{item.productId}</span>
-                               </div>
-                               <div className="flex items-center justify-center md:justify-start gap-6">
-                                  <div className="flex items-center gap-1.5 text-xs font-black text-slate-400 lowercase italic">
-                                     <Boxes size={14} className="text-primary not-italic" /> {item.quantity} {item.unit} Requested
-                                  </div>
-                                  <div className="flex items-center gap-1.5 text-xs font-black text-slate-900 tracking-tighter">
-                                     {item.pricePerUnit} EGP / Unit
-                                  </div>
-                               </div>
-                            </div>
-
-                            <div className="flex flex-col items-center gap-4">
-                               {item.productionOrderId ? (
-                                 <div className="flex flex-col items-center text-center space-y-1">
-                                    <div className="flex items-center gap-1.5 text-emerald-600 font-black text-[10px] uppercase tracking-widest">
-                                       <CheckCircle2 size={16} /> Production Synced
-                                    </div>
-                                    <button className="text-[9px] font-black text-slate-400 flex items-center gap-1 hover:text-primary">
-                                       PO-{item.productionOrderId.split('-')[1]} <ExternalLink size={10} />
-                                    </button>
-                                 </div>
-                               ) : (
-                                 <button 
-                                   onClick={() => {
-                                      setActiveProductionItem(item);
-                                      setIsProductionSheetOpen(true);
-                                   }}
-                                   className="px-6 py-4 bg-amber-50 text-amber-600 rounded-[22px] font-black text-[10px] tracking-widest uppercase hover:bg-amber-600 hover:text-white transition-all shadow-lg shadow-amber-200/50 flex items-center gap-2"
-                                 >
-                                    <Cpu size={14} /> Forge Prod Order
-                                 </button>
-                               )}
-                            </div>
-                         </div>
-                       ))}
-                    </div>
-                 </div>
-
-                 {/* Cart Financial Summary */}
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                    <div className="bg-slate-900 p-10 rounded-[45px] text-white space-y-6 relative overflow-hidden">
-                       <div className="absolute top-0 right-0 p-8 opacity-10">
-                          <Banknote size={100} />
-                       </div>
-                       <h5 className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em]">Settlement Logic</h5>
-                       <div className="space-y-4">
-                          <div className="flex justify-between items-end border-b border-white/5 pb-4">
-                             <span className="text-[10px] font-black text-white/60 uppercase">Cart Subtotal</span>
-                             <span className="text-2xl font-black tracking-tighter">{selectedOrder.totalAmount.toLocaleString()} <span className="text-xs">EGP</span></span>
+                                <p className="text-xs font-bold text-slate-700 truncate" title={snap.fileName}>{snap.fileName}</p>
+                                <div className="flex gap-2">
+                                  <a href={snap.dataUrl} target="_blank" rel="noopener noreferrer" className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-primary text-white text-[10px] font-bold hover:opacity-90">
+                                    <ExternalLink size={12} /> View
+                                  </a>
+                                  <a href={snap.dataUrl} download={snap.fileName} className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-[10px] font-bold hover:bg-slate-50">
+                                    <Download size={12} /> Save
+                                  </a>
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                          <div className="flex justify-between items-center text-emerald-400 font-black pt-2">
-                             <span className="text-[10px] uppercase tracking-widest">Status Code</span>
-                             <span className="text-sm uppercase tracking-[0.2em]">{selectedOrder.paymentStatus}</span>
-                          </div>
-                       </div>
-                       <button className="w-full py-5 bg-white text-slate-900 rounded-2xl font-black text-xs tracking-widest uppercase hover:bg-emerald-400 transition-all flex items-center justify-center gap-2">
-                          <Printer size={18} /> GENERATE FISCAL BILL
-                       </button>
-                    </div>
+                        ) : (
+                          <p className="text-sm text-slate-500">File(s): {item.designChoice.uploadFileName} (no preview stored for this order)</p>
+                        )}
+                      </div>
+                    )}
 
-                    <div className="bg-white p-10 rounded-[45px] border border-slate-100 space-y-6">
-                       <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Web Attachments & Designs</h5>
-                       <div className="grid grid-cols-3 gap-4">
-                          {selectedOrder.items[0].attachments.length > 0 ? (
-                             selectedOrder.items[0].attachments.map((file, i) => (
-                               <div key={i} className="aspect-square bg-slate-50 rounded-3xl border border-slate-100 flex items-center justify-center overflow-hidden group relative">
-                                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
-                                     <ExternalLink className="text-white" size={20} />
-                                  </div>
-                                  <LucideImage size={32} className="text-slate-200" />
-                               </div>
-                             ))
+                    {/* My library */}
+                    {item.designChoice.source === "my_library" && (item.myLibraryDesignSnapshot ?? item.designChoice.myLibraryDesignId) && (() => {
+                      const snapshot = item.myLibraryDesignSnapshot;
+                      const name = snapshot?.name ?? userDesignsApi.getDesignById(selectedOrder!.userId, item.designChoice.myLibraryDesignId!)?.name ?? item.designChoice.myLibraryDesignId;
+                      const imageUrl = snapshot?.imageDataUrl;
+                      if (!imageUrl) return <p className="text-sm text-slate-500">My library: {name}</p>;
+                      return (
+                        <div className="flex flex-wrap items-start gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100">
+                          <div className="w-28 h-28 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 bg-repeat bg-center shrink-0" style={{ backgroundImage: `url(${imageUrl})`, backgroundSize: "56px" }} />
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold text-slate-900">{name}</p>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Customer’s Pattern Studio design</p>
+                            <div className="flex flex-wrap gap-2 mt-3">
+                              <a href={imageUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold hover:opacity-90">
+                                <ExternalLink size={14} /> View full size
+                              </a>
+                              <a href={imageUrl} download={(name || "pattern").replace(/\s+/g, "-") + ".png"} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50">
+                                <Download size={14} /> Download
+                              </a>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Repeat */}
+                    {item.designChoice.source === "repeat" && item.designChoice.repeatOrderId && (() => {
+                      const repeatedOrder = ordersApi.getOrderById(item.designChoice.repeatOrderId!);
+                      const repeatedItem = repeatedOrder?.items?.[0];
+                      const hasSnapshot = repeatedItem?.myLibraryDesignSnapshot ?? (repeatedItem?.uploadSnapshots?.length ?? 0) > 0;
+                      const preset = repeatedItem?.designChoice?.presetId ? ordersApi.getPresetById(repeatedItem.designChoice.presetId) : null;
+                      return (
+                        <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+                          <p className="font-bold text-slate-900">Repeat of order {item.designChoice.repeatOrderId}</p>
+                          {repeatedOrder && (preset || repeatedItem?.myLibraryDesignSnapshot || (repeatedItem?.uploadSnapshots?.length ?? 0) > 0) ? (
+                            <div className="mt-3 flex flex-wrap gap-3">
+                              {preset && (
+                                <div className="flex items-center gap-2">
+                                  <img src={typeof preset.imageUrl === "string" ? preset.imageUrl : (preset as { imageUrl: string }).imageUrl} alt={preset.name} className="w-14 h-14 rounded-lg object-cover border border-slate-200" />
+                                  <span className="text-xs font-bold text-slate-600">{preset.name}</span>
+                                </div>
+                              )}
+                              {repeatedItem?.myLibraryDesignSnapshot?.imageDataUrl && (
+                                <div className="w-14 h-14 rounded-lg border border-slate-200 bg-repeat bg-center" style={{ backgroundImage: `url(${repeatedItem.myLibraryDesignSnapshot.imageDataUrl})`, backgroundSize: "28px" }} title={repeatedItem.myLibraryDesignSnapshot.name} />
+                              )}
+                              {repeatedItem?.uploadSnapshots?.slice(0, 3).map((s, i) => (
+                                <img key={i} src={s.dataUrl} alt={s.fileName} className="w-14 h-14 rounded-lg object-cover border border-slate-200" />
+                              ))}
+                            </div>
                           ) : (
-                             <div className="col-span-3 py-10 flex flex-col items-center justify-center text-slate-200 grayscale opacity-40 italic">
-                                <Info size={32} className="mb-2" />
-                                <span className="text-[10px] font-black uppercase">No source files provided</span>
-                             </div>
+                            <p className="text-xs text-slate-500 mt-1">Original order design not available in this view.</p>
                           )}
-                       </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </section>
+
+                {/* Fabric & quantity */}
+                <section className="bg-white p-6 rounded-2xl border border-slate-100">
+                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                    <Package size={14} /> Fabric & quantity
+                  </h3>
+                  <p className="text-sm text-slate-700">
+                    Type: <span className="font-bold uppercase">{item.fabricChoice.fabricType}</span>
+                    {" · "}
+                    Source: <span className="font-bold">{fabricSourceLabel(item.fabricChoice.fabricSource)}</span>
+                  </p>
+                  {factoryFabric && (
+                    <p className="text-sm text-slate-700 mt-1">
+                      Factory fabric: {factoryFabric.name} · {item.quantity} m · {item.unitPrice} EGP/m
+                    </p>
+                  )}
+                  {item.fabricChoice.fabricSource === "customer" && item.fabricChoice.customerNotes && (
+                    <p className="text-sm text-slate-600 mt-1">Notes: {item.fabricChoice.customerNotes}</p>
+                  )}
+                  {item.fabricChoice.fabricSource === "not_sure" && item.fabricChoice.inquiry && (
+                    <p className="text-sm text-slate-600 mt-1">Inquiry: {item.fabricChoice.inquiry}</p>
+                  )}
+                  <p className="font-bold text-slate-900 mt-2">Quantity: {item.quantity} m</p>
+                </section>
+
+                {/* Payment */}
+                {!isQuotation && (
+                  <section className="bg-white p-6 rounded-2xl border border-slate-100">
+                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                      <Banknote size={14} /> Payment
+                    </h3>
+                    <p className="text-sm text-slate-700">
+                      Method: <span className="font-bold uppercase">{selectedOrder.paymentMethod ?? "—"}</span>
+                    </p>
+                    <p className="font-bold text-slate-900 mt-1">Total: {selectedOrder.totalAmount.toLocaleString()} EGP</p>
+                  </section>
+                )}
+
+                {/* Notes */}
+                {item.notes && (
+                  <section className="bg-white p-6 rounded-2xl border border-slate-100">
+                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                      <FileText size={14} /> Notes
+                    </h3>
+                    <p className="text-sm text-slate-700">{item.notes}</p>
+                  </section>
+                )}
+
+                {/* Send quotation (Email / WhatsApp) – customizable */}
+                {(isQuotation || waitsQuotation) && (
+                  <section className="bg-white p-6 rounded-2xl border-2 border-amber-100">
+                    <h3 className="text-[10px] font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-2">
+                      <Mail size={14} /> Send quotation
+                    </h3>
+                    <p className="text-xs text-slate-500 mb-4">Customize the message below, then send by email or WhatsApp.</p>
+                    <div className="flex gap-2 mb-4">
+                      <button
+                        type="button"
+                        onClick={() => setQuotationChannel("email")}
+                        className={cn(
+                          "flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all",
+                          quotationChannel === "email" ? "bg-primary text-white border-primary" : "bg-slate-50 border-slate-200 text-slate-600 hover:border-primary/50"
+                        )}
+                      >
+                        <Mail size={16} /> Email
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQuotationChannel("whatsapp")}
+                        className={cn(
+                          "flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all",
+                          quotationChannel === "whatsapp" ? "bg-green-600 text-white border-green-600" : "bg-slate-50 border-slate-200 text-slate-600 hover:border-green-500/30"
+                        )}
+                      >
+                        <MessageCircle size={16} /> WhatsApp
+                      </button>
                     </div>
-                 </div>
+
+                    {quotationChannel === "email" && (
+                      <div className="space-y-4">
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">To</label>
+                          <p className="text-sm font-medium text-slate-700 mt-0.5">{customer?.email ?? "—"}</p>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Subject (editable)</label>
+                          <input
+                            type="text"
+                            value={emailSubject}
+                            onChange={(e) => setEmailSubject(e.target.value)}
+                            className="w-full mt-1 px-3 py-2 rounded-lg border border-slate-200 text-sm"
+                            placeholder="Quotation subject"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Message (editable)</label>
+                          <textarea
+                            value={emailBody}
+                            onChange={(e) => setEmailBody(e.target.value)}
+                            rows={8}
+                            className="w-full mt-1 px-3 py-2 rounded-lg border border-slate-200 text-sm resize-y"
+                            placeholder="Email body"
+                          />
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" onClick={handleOpenMail} className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-bold hover:opacity-90">
+                            <ExternalLink size={16} /> Open in email client
+                          </button>
+                          <button type="button" onClick={handleCopyEmail} className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-200">
+                            <Copy size={16} /> {copied ? "Copied!" : "Copy to clipboard"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {quotationChannel === "whatsapp" && (
+                      <div className="space-y-4">
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">WhatsApp number (with country code, no +)</label>
+                          <input
+                            type="tel"
+                            value={whatsappPhone}
+                            onChange={(e) => { setWhatsappPhone(e.target.value); setWhatsappError(""); }}
+                            className={cn("w-full mt-1 px-3 py-2 rounded-lg border text-sm", whatsappError ? "border-red-300 bg-red-50/50" : "border-slate-200")}
+                            placeholder="e.g. 201234567890"
+                          />
+                          {whatsappError && <p className="text-xs text-red-600 mt-1 font-medium">{whatsappError}</p>}
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Message (editable)</label>
+                          <textarea
+                            value={whatsappMessage}
+                            onChange={(e) => setWhatsappMessage(e.target.value)}
+                            rows={6}
+                            className="w-full mt-1 px-3 py-2 rounded-lg border border-slate-200 text-sm resize-y"
+                            placeholder="WhatsApp message"
+                          />
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" onClick={handleOpenWhatsApp} className="inline-flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-xl text-sm font-bold hover:opacity-90">
+                            <ExternalLink size={16} /> Open WhatsApp
+                          </button>
+                          <button type="button" onClick={handleCopyWhatsApp} className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-200">
+                            <Copy size={16} /> {copied ? "Copied!" : "Copy message"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-end gap-4">
+                      <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Quotation amount (EGP)</label>
+                        <input
+                          type="text"
+                          value={quotationAmount}
+                          onChange={(e) => setQuotationAmount(e.target.value)}
+                          className="w-32 mt-1 px-3 py-2 rounded-lg border border-slate-200 text-sm"
+                          placeholder="e.g. 500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Validity</label>
+                        <input
+                          type="text"
+                          value={quotationValidity}
+                          onChange={(e) => setQuotationValidity(e.target.value)}
+                          className="w-32 mt-1 px-3 py-2 rounded-lg border border-slate-200 text-sm"
+                          placeholder="e.g. 7 days"
+                        />
+                      </div>
+                      <button type="button" onClick={refreshQuotationTemplates} className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">
+                        Refresh template with amount & validity
+                      </button>
+                    </div>
+                  </section>
+                )}
+
+                {/* Status update (admin) */}
+                <section className="bg-white p-6 rounded-2xl border border-slate-100">
+                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                    <Tag size={14} /> Update status
+                  </h3>
+                  <div className="flex flex-wrap gap-2">
+                    {(
+                      [
+                        ["SUBMITTED", "Pending"],
+                        ["IN_PRODUCTION", "In Progress"],
+                        ["COMPLETED", "Done"],
+                        ["CANCELLED", "Cancelled"],
+                      ] as const
+                    ).map(([status, label]) => (
+                      <button
+                        key={status}
+                        onClick={() => handleStatusChange(selectedOrder.id, status)}
+                        className={cn(
+                          "px-4 py-2 rounded-xl text-xs font-bold uppercase border transition-all",
+                          selectedOrder.status === status
+                            ? "bg-primary text-white border-primary"
+                            : "bg-slate-50 border-slate-200 text-slate-600 hover:border-primary/50"
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </section>
               </div>
             </>
           )}
         </SheetContent>
       </Sheet>
 
-      {/* 2. Production Forge Sheet */}
-      <Sheet open={isProductionSheetOpen} onOpenChange={setIsProductionSheetOpen}>
-         <SheetContent className="w-full sm:max-w-3xl p-0 border-none flex flex-col bg-white">
-            <div className="bg-amber-500 p-12 text-white relative">
-               <div className="absolute top-0 right-0 p-10 opacity-10">
-                  <Cpu size={140} />
-               </div>
-               <SheetHeader>
-                  <SheetTitle className="text-4xl font-black uppercase tracking-tighter text-white">Technician Forge</SheetTitle>
-                  <SheetDescription className="text-white/80 font-bold text-sm">Calculate material allocation and generate technicians sheet.</SheetDescription>
-               </SheetHeader>
-            </div>
+      <AlertDialog open={!!deleteConfirmOrder} onOpenChange={(open) => !open && setDeleteConfirmOrder(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete order?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete order {deleteConfirmOrder?.id}? This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteOrder} className="bg-red-600 hover:bg-red-700">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-            {activeProductionItem && (
-               <div className="flex-1 overflow-y-auto p-12 space-y-12">
-                  <div className="flex items-center gap-6 p-8 bg-slate-50 rounded-[40px] border border-slate-100">
-                     <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center text-amber-500 shadow-sm">
-                        <Palette size={40} />
-                     </div>
-                     <div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Target Product</p>
-                        <h4 className="text-2xl font-black text-slate-900 tracking-tighter uppercase">{activeProductionItem.productName}</h4>
-                        <div className="flex items-center gap-3 mt-1 underline decoration-amber-200 underline-offset-4">
-                           <span className="text-[10px] font-black text-amber-600 uppercase italic">Run Quantity: {activeProductionItem.quantity} {activeProductionItem.unit}</span>
-                        </div>
-                     </div>
-                  </div>
-
-                  {/* Production BOM List */}
-                  <div className="space-y-6">
-                     <div className="flex items-center justify-between">
-                        <h5 className="text-[11px] font-black text-slate-900 uppercase tracking-[0.2em] ml-2">Smart Recipe Breakdown</h5>
-                        <button className="text-[10px] font-black text-primary uppercase border-b border-primary/20">Apply Template</button>
-                     </div>
-
-                     <div className="space-y-4">
-                        <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between hover:border-amber-400 transition-all">
-                           <div className="flex items-center gap-4">
-                              <div className="w-12 h-12 bg-slate-900 text-white rounded-xl flex items-center justify-center text-xs font-black">CP</div>
-                              <div>
-                                 <p className="text-sm font-black text-slate-900 uppercase tracking-tight">Cotton Premium XL</p>
-                                 <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest tracking-tight">Required: 55m | On-Hand: 450m</p>
-                              </div>
-                           </div>
-                           <div className="text-right">
-                              <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-md text-[9px] font-black uppercase tracking-widest border border-emerald-100">Allocated</span>
-                           </div>
-                        </div>
-                        <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between hover:border-amber-400 transition-all">
-                           <div className="flex items-center gap-4">
-                              <div className="w-12 h-12 bg-slate-900 text-white rounded-xl flex items-center justify-center text-xs font-black">CI</div>
-                              <div>
-                                 <p className="text-sm font-black text-slate-900 uppercase tracking-tight">Cyan Pigment Ink</p>
-                                 <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Required: 750g | On-Hand: 1200g</p>
-                              </div>
-                           </div>
-                           <div className="text-right">
-                              <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-md text-[9px] font-black uppercase tracking-widest border border-emerald-100">Allocated</span>
-                           </div>
-                        </div>
-
-                        {/* Customer Provided Materials */}
-                        <div className="p-8 bg-slate-900 rounded-[35px] text-white relative overflow-hidden group">
-                           <div className="absolute top-0 right-0 p-6 opacity-10">
-                              <Truck size={60} />
-                           </div>
-                           <h6 className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-2 flex items-center gap-2">
-                              <Plus size={14} /> Unlisted Input
-                           </h6>
-                           <p className="text-xs font-bold text-white/40 leading-relaxed max-w-[220px]">Append materials provided by client not tracked in SKU database.</p>
-                        </div>
-                     </div>
-                  </div>
-               </div>
-            )}
-
-            <div className="p-10 border-t border-slate-50 flex gap-4 bg-slate-50/10">
-               <button onClick={() => setIsProductionSheetOpen(false)} className="flex-1 py-5 border-2 border-slate-100 rounded-[25px] font-black text-xs text-slate-400 uppercase tracking-widest">Discard Forge</button>
-               <button className="flex-[2] py-5 bg-amber-500 text-white rounded-[25px] font-black text-xs tracking-widest shadow-xl shadow-amber-200 uppercase hover:scale-[1.02] transition-all flex items-center justify-center gap-2">
-                  <Printer size={18} /> GENERATE TECH SHEET & ALLOCATE
-               </button>
-            </div>
-         </SheetContent>
-      </Sheet>
-
-      {/* 3. New Order Sheet */}
+      {/* Add order (admin) */}
       <Sheet open={isAddOrderOpen} onOpenChange={setIsAddOrderOpen}>
-        <SheetContent className="sm:max-w-md bg-white border-l border-slate-100 p-0 flex flex-col">
-          <SheetHeader className="p-8 border-b border-slate-50 bg-slate-50/50">
-            <SheetTitle className="text-2xl font-black text-slate-900 uppercase tracking-tight">New Order</SheetTitle>
-            <SheetDescription className="text-xs font-bold text-slate-400 uppercase tracking-widest">Manual entry for offline requests</SheetDescription>
-          </SheetHeader>
-          
-          <div className="flex-1 p-8 space-y-8 overflow-y-auto">
-             <div className="space-y-3">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer Identity</label>
-                <div className="relative">
-                   <Users className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-                   <input 
-                     type="text" 
-                     className="w-full bg-slate-50 border-none pl-12 pr-4 py-5 rounded-2xl text-sm font-bold text-slate-900 placeholder:text-slate-300 outline-none focus:ring-2 focus:ring-primary/10 transition-all"
-                     placeholder="Customer Name..."
-                     value={newOrder.customer}
-                     onChange={(e) => setNewOrder({...newOrder, customer: e.target.value})}
-                   />
-                </div>
-             </div>
-
-             <div className="space-y-3">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Primary Item</label>
-                <div className="relative">
-                   <Package className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-                   <input 
-                     type="text" 
-                     className="w-full bg-slate-50 border-none pl-12 pr-4 py-5 rounded-2xl text-sm font-bold text-slate-900 placeholder:text-slate-300 outline-none focus:ring-2 focus:ring-primary/10 transition-all"
-                     placeholder="Product description... (e.g. 500 Business Cards)"
-                     value={newOrder.product}
-                     onChange={(e) => setNewOrder({...newOrder, product: e.target.value})}
-                   />
-                </div>
-             </div>
-
-             <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-3">
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Value</label>
-                   <div className="relative">
-                      <Banknote className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-                      <input 
-                        type="number" 
-                        className="w-full bg-slate-50 border-none pl-12 pr-4 py-5 rounded-2xl text-sm font-bold text-slate-900 placeholder:text-slate-300 outline-none focus:ring-2 focus:ring-primary/10 transition-all"
-                        placeholder="0.00"
-                        value={newOrder.amount}
-                        onChange={(e) => setNewOrder({...newOrder, amount: e.target.value})}
-                      />
-                   </div>
-                </div>
-                <div className="space-y-3">
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Initial Status</label>
-                   <div className="relative">
-                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" size={18} />
-                      <select 
-                         className="w-full bg-slate-50 border-none px-4 py-5 rounded-2xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-primary/10 transition-all appearance-none cursor-pointer"
-                         value={newOrder.status}
-                         onChange={(e) => setNewOrder({...newOrder, status: e.target.value as OrderStatus})}
-                      >
-                         <option value="Pending Confirmation">Pending</option>
-                         <option value="Order confirmed">Confirmed</option>
-                         <option value="In Production">In Production</option>
-                      </select>
-                   </div>
-                </div>
-             </div>
+        <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+          <h3 className="text-lg font-black text-slate-900 uppercase mb-4">Add order</h3>
+          <p className="text-sm text-slate-500 mb-6">Create an order manually (e.g. phone or offline).</p>
+          <div className="space-y-4">
+            <div>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer</label>
+              <select value={addUserId} onChange={(e) => setAddUserId(e.target.value)} className="w-full mt-1 px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                <option value="">Select customer</option>
+                {allUsers.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Design (preset)</label>
+              <select value={addPresetId} onChange={(e) => setAddPresetId(e.target.value)} className="w-full mt-1 px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                <option value="">Select design</option>
+                {presets.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Fabric type</label>
+                <select value={addFabricType} onChange={(e) => setAddFabricType(e.target.value as "sublimation" | "natural")} className="w-full mt-1 px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                  <option value="sublimation">Sublimation</option>
+                  <option value="natural">Natural</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Order type</label>
+                <select value={addOrderType} onChange={(e) => setAddOrderType(e.target.value as "sample" | "order")} className="w-full mt-1 px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                  <option value="sample">Sample</option>
+                  <option value="order">Order</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Fabric source</label>
+              <select value={addFabricSource} onChange={(e) => setAddFabricSource(e.target.value as "customer" | "factory" | "not_sure")} className="w-full mt-1 px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                <option value="factory">Factory Provides</option>
+                <option value="customer">I Provide</option>
+                <option value="not_sure">Not Sure</option>
+              </select>
+            </div>
+            {addFabricSource === "factory" && (
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Factory fabric</label>
+                <select value={addFactoryFabricId} onChange={(e) => setAddFactoryFabricId(e.target.value)} className="w-full mt-1 px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                  <option value="">Select fabric</option>
+                  {factoryFabricsList.filter((f) => f.type === addFabricType).map((f) => (
+                    <option key={f.id} value={f.id}>{f.name} – {f.pricePerMeter} EGP/m</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Quantity (m)</label>
+              <input type="number" min={1} value={addQuantity} onChange={(e) => setAddQuantity(Number(e.target.value) || 1)} className="w-full mt-1 px-3 py-2 rounded-lg border border-slate-200 text-sm" />
+            </div>
+            <div>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Notes</label>
+              <textarea value={addNotes} onChange={(e) => setAddNotes(e.target.value)} rows={2} className="w-full mt-1 px-3 py-2 rounded-lg border border-slate-200 text-sm resize-none" placeholder="Optional" />
+            </div>
+            <div>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Initial status</label>
+              <select value={addStatus} onChange={(e) => setAddStatus(e.target.value as ApiOrderStatus)} className="w-full mt-1 px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                <option value="SUBMITTED">Pending</option>
+                <option value="IN_PRODUCTION">In Progress</option>
+                <option value="COMPLETED">Done</option>
+                <option value="CANCELLED">Cancelled</option>
+              </select>
+            </div>
+            <div className="flex gap-2 pt-4">
+              <button type="button" onClick={() => setIsAddOrderOpen(false)} className="flex-1 py-2.5 rounded-lg border border-slate-200 text-sm font-bold text-slate-600">Cancel</button>
+              <button type="button" onClick={handleAddOrder} disabled={!addUserId || !addPresetId} className="flex-1 py-2.5 rounded-lg bg-primary text-white text-sm font-bold disabled:opacity-50">Create order</button>
+            </div>
           </div>
-
-          <SheetFooter className="p-8 border-t border-slate-50 bg-white">
-             <div className="flex gap-4 w-full">
-                <SheetClose asChild>
-                   <button className="flex-1 py-5 rounded-2xl font-black text-xs uppercase tracking-widest bg-slate-50 text-slate-400 hover:bg-slate-100 transition-colors">
-                      Cancel
-                   </button>
-                </SheetClose>
-                <button 
-                   onClick={handleCreateOrder}
-                   className="flex-[2] py-5 rounded-2xl font-black text-xs uppercase tracking-widest bg-slate-900 text-white shadow-xl hover:bg-primary transition-all hover:scale-[1.02]"
-                >
-                   Create Order
-                </button>
-             </div>
-          </SheetFooter>
         </SheetContent>
       </Sheet>
 
       <style>{`
-        .animate-fade-in-up {
-          animation: fadeInUp 0.5s ease-out forwards;
-        }
-        @keyframes fadeInUp {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
+        .animate-fade-in-up { animation: fadeInUp 0.5s ease-out forwards; }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
     </ManagementLayout>
   );

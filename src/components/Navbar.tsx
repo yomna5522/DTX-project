@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import Logo from "@/assets/Logo.png";
 import { useAuth } from "@/contexts/AuthContext";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
+import { cn } from "@/lib/utils";
 
 const navLinks = [
   { key: "home", href: "/" },
@@ -12,6 +13,7 @@ const navLinks = [
   { key: "services", href: "/services" },
   { key: "shop", href: "/shop" },
   { key: "portfolio", href: "/portfolio" },
+  { key: "patternStudio", href: "/pattern-studio" },
   { key: "contact", href: "/contact" },
 ];
 
@@ -166,9 +168,10 @@ const Navbar = () => {
               </Link>
               <Link
                 to="/settings"
-                className={`block py-3 text-sm font-bold transition-colors border-l-4 pl-3 mt-1 flex items-center gap-2 ${
+                className={cn(
+                  "flex items-center gap-2 py-3 text-sm font-bold transition-colors border-l-4 pl-3 mt-1",
                   location.pathname === "/settings" ? "text-accent border-accent bg-accent/5" : "text-foreground border-transparent hover:text-accent"
-                }`}
+                )}
                 onClick={() => setMobileOpen(false)}
               >
                 <Settings className="h-4 w-4" />

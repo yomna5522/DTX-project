@@ -14,16 +14,16 @@ describe("ordersApi", () => {
     expect(presets[0]).toHaveProperty("basePricePerUnit");
   });
 
-  it("computes unit price for preset design and factory fabric", () => {
-    const design: DesignChoice = { source: "preset", presetId: "p1" };
-    const fabric: FabricChoice = { fabricType: "artificial", fabricSource: "factory" };
+  it("computes unit price for existing preset design and factory fabric", () => {
+    const design: DesignChoice = { source: "existing", presetId: "p1" };
+    const fabric: FabricChoice = { fabricType: "sublimation", orderType: "order", fabricSource: "factory", factoryFabricId: "f1" };
     const price = ordersApi.computeUnitPrice(design, fabric);
     expect(price).toBeGreaterThan(0);
   });
 
   it("computes unit price for upload and customer fabric", () => {
     const design: DesignChoice = { source: "upload", uploadFileName: "file.png" };
-    const fabric: FabricChoice = { fabricType: "natural", fabricSource: "customer" };
+    const fabric: FabricChoice = { fabricType: "natural", orderType: "order", fabricSource: "customer" };
     const price = ordersApi.computeUnitPrice(design, fabric);
     expect(price).toBeGreaterThan(0);
   });
@@ -32,8 +32,8 @@ describe("ordersApi", () => {
     const order = ordersApi.createOrder({
       userId: "user-new",
       customerType: "NEW",
-      designChoice: { source: "preset", presetId: "p1" },
-      fabricChoice: { fabricType: "artificial", fabricSource: "factory" },
+      designChoice: { source: "existing", presetId: "p1" },
+      fabricChoice: { fabricType: "sublimation", orderType: "order", fabricSource: "factory", factoryFabricId: "f1" },
       quantity: 5,
       notes: "",
       paymentMethod: "COD",
@@ -49,11 +49,11 @@ describe("ordersApi", () => {
     const order = ordersApi.createOrder({
       userId: "user-existing",
       customerType: "EXISTING",
-      designChoice: { source: "preset", presetId: "p1" },
-      fabricChoice: { fabricType: "natural", fabricSource: "customer" },
+      designChoice: { source: "existing", presetId: "p1" },
+      fabricChoice: { fabricType: "natural", orderType: "order", fabricSource: "customer" },
       quantity: 2,
       notes: "Rush",
-      paymentMethod: "BANK_TRANSFER",
+      paymentMethod: "instapay",
     });
     expect(order.status).toBe("INVOICE_PENDING");
     expect(order.invoice?.status).toBe("PENDING");

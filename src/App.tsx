@@ -19,6 +19,7 @@ import Register from "./pages/Register";
 import UserOrders from "./pages/Orders";
 import OrderDetail from "./pages/OrderDetail";
 import UserSettings from "./pages/Settings";
+import PatternStudio from "./pages/PatternStudio";
 
 // Management pages (from HEAD)
 import Dashboard from "./pages/management/Dashboard";
@@ -37,6 +38,8 @@ import Financials from "./pages/management/Financials";
 import Invoices from "./pages/management/Invoices";
 import HRM from "./pages/management/HRM";
 import ControlCenter from "./pages/management/Settings";
+import FabricInventory from "./pages/management/FabricInventory";
+import DesignLibrary from "./pages/management/DesignLibrary";
 
 import NotFound from "./pages/NotFound";
 import ScrollToTop from "./components/ScrollToTop";
@@ -58,6 +61,7 @@ const App = () => {
             <Route path="/" element={<Index />} />
             <Route path="/about" element={<About />} />
             <Route path="/shop" element={<ProtectedRoute><Shop /></ProtectedRoute>} />
+            <Route path="/pattern-studio" element={<ProtectedRoute><PatternStudio /></ProtectedRoute>} />
             <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/contact" element={<Contact />} />
             <Route path="/services" element={<Services />} />
@@ -78,6 +82,8 @@ const App = () => {
             <Route path="/management/expenses" element={<Expenses />} />
             <Route path="/management/orders" element={<ManagementOrders />} />
             <Route path="/management/orders/tracking" element={<OrderTracking />} />
+            <Route path="/management/fabric-inventory" element={<FabricInventory />} />
+            <Route path="/management/design-library" element={<DesignLibrary />} />
             <Route path="/management/production" element={<ProductionForge />} />
             <Route path="/management/production/templates" element={<ProductionTemplates />} />
             <Route path="/management/financials" element={<Financials />} />

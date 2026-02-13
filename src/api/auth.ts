@@ -1,17 +1,33 @@
 import type { User, Session } from "@/types/auth";
 
 const STORAGE_KEY = "dtx_session";
+const USERS_STORAGE_KEY = "dtx_users";
 
-// In-memory store for registered users (persists only in session; existing users are seeded)
-let users: User[] = [
-  {
-    id: "existing-1",
-    email: "existing@dtx.example",
-    name: "Existing Customer",
-    username: "existing_customer",
-    customerType: "EXISTING",
-  },
-];
+const SEED_USER: User = {
+  id: "existing-1",
+  email: "existing@dtx.example",
+  name: "Existing Customer",
+  username: "existing_customer",
+  customerType: "EXISTING",
+};
+
+function loadUsers(): User[] {
+  try {
+    const raw = localStorage.getItem(USERS_STORAGE_KEY);
+    if (!raw) return [SEED_USER];
+    const list = JSON.parse(raw) as User[];
+    const hasSeed = list.some((u) => u.id === SEED_USER.id);
+    return hasSeed ? list : [SEED_USER, ...list];
+  } catch {
+    return [SEED_USER];
+  }
+}
+
+function saveUsers(list: User[]) {
+  localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(list));
+}
+
+let users: User[] = loadUsers();
 
 // Temporary passwords for existing customers (mock: in real app these are issued by factory)
 const existingPasswords: Record<string, string> = {
@@ -80,9 +96,20 @@ export const authApi = {
       password: data.password,
     };
     users.push(user);
+    saveUsers(users);
     const session: Session = { user, token: `mock-token-${user.id}-${Date.now()}` };
     setStoredSession(session);
     return { success: true, session };
+  },
+
+  getUserById(id: string): User | undefined {
+    users = loadUsers();
+    return users.find((u) => u.id === id);
+  },
+
+  getAllUsers(): User[] {
+    users = loadUsers();
+    return [...users];
   },
 
   logout(): void {

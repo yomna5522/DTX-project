@@ -22,7 +22,8 @@ import {
   Activity,
   Percent,
   Mail,
-  Menu
+  Menu,
+  Palette
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -65,7 +66,9 @@ const ManagementLayout = ({ children }: { children: React.ReactNode }) => {
     {
       title: "Production Chain",
       items: [
-        { icon: ShoppingBag, label: "Sales Orders", href: "/management/orders" },
+        { icon: ShoppingBag, label: "Orders & Quotations", href: "/management/orders" },
+        { icon: Layers, label: "Fabric Inventory", href: "/management/fabric-inventory" },
+        { icon: Palette, label: "Design Library", href: "/management/design-library" },
         { icon: Cpu, label: "Production Forge", href: "/management/production" },
         { icon: FileText, label: "Templates", href: "/management/production/templates" },
         { icon: Layers, label: "Products Catalog", href: "/management/products" },

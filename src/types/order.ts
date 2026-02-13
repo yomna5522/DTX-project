@@ -10,7 +10,7 @@ export type OrderStatus =
   | "COMPLETED"
   | "CANCELLED";
 
-export type DesignSource = "existing" | "upload" | "repeat";
+export type DesignSource = "existing" | "upload" | "repeat" | "my_library";
 export type FabricType = "sublimation" | "natural";
 export type OrderType = "sample" | "order";
 export type FabricSource = "customer" | "factory" | "not_sure";
@@ -30,6 +30,7 @@ export interface FactoryFabric {
   type: FabricType;
   pricePerMeter: number;
   minimumQuantity: number;
+  availableMeters?: number;
   description?: string;
 }
 
@@ -38,6 +39,7 @@ export interface DesignChoice {
   presetId?: string;
   uploadFileName?: string;
   repeatOrderId?: string;
+  myLibraryDesignId?: string;
 }
 
 export interface FabricChoice {
@@ -59,6 +61,10 @@ export interface OrderItem {
   notes: string;
   unitPrice: number;
   totalPrice: number;
+  /** When design is from customer’s Pattern Studio library, store a snapshot so management can show the design */
+  myLibraryDesignSnapshot?: { name: string; imageDataUrl: string };
+  /** When design is upload(s), store snapshots so management can show and download all files */
+  uploadSnapshots?: { fileName: string; dataUrl: string }[];
 }
 
 export interface Invoice {

@@ -1,13 +1,14 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import TopBar from "@/components/TopBar";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import CTASection from "@/components/CTASection";
-import { Search, UploadCloud, RefreshCcw, ArrowRight, ArrowLeft, FileText, Package, HelpCircle, CheckCircle2, Image, File, Eye, Download } from "lucide-react";
+import { Search, UploadCloud, RefreshCcw, ArrowRight, ArrowLeft, FileText, Package, HelpCircle, CheckCircle2, Image, File, Eye, Download, Palette } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { ordersApi } from "@/api/orders";
+import { userDesignsApi } from "@/api/userDesigns";
 import type { DesignChoice, FabricChoice, DesignSource, FabricType, FabricSource, PaymentMethod, OrderType } from "@/types/order";
 import heroPrinting from "@/assets/hero-printing.jpg";
 import aestheticWallpaper from "@/assets/𝘈𝘦𝘴𝘵𝘩𝘦𝘵𝘪𝘤 𝘞𝘢𝘭𝘭𝘱𝘢𝘱𝘦𝘳.jpg";
@@ -25,6 +26,7 @@ const Shop = () => {
   const { t } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [step, setStep] = useState(1);
   const formSectionRef = useRef<HTMLElement>(null);
@@ -35,6 +37,7 @@ const Shop = () => {
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [uploadPreviewUrls, setUploadPreviewUrls] = useState<Map<string, string>>(new Map());
   const [repeatOrderId, setRepeatOrderId] = useState<string | null>(null);
+  const [myLibraryDesignId, setMyLibraryDesignId] = useState<string | null>(null);
   
   // Step 2: Fabric & Order Type
   const [fabricChoice, setFabricChoice] = useState<Partial<FabricChoice>>(emptyFabricChoice);
@@ -53,7 +56,16 @@ const Shop = () => {
 
   const presets = useMemo(() => ordersApi.getPresetDesigns(), []);
   const userOrders = useMemo(() => (user ? ordersApi.getOrdersByUserId(user.id) : []), [user]);
+  const myLibraryDesigns = useMemo(() => (user ? userDesignsApi.getDesignsByUserId(user.id) : []), [user]);
   const factoryFabrics = useMemo(() => ordersApi.getFactoryFabrics(), []);
+
+  useEffect(() => {
+    const useId = (location.state as { useMyDesignId?: string })?.useMyDesignId;
+    if (useId && user && myLibraryDesigns.some((d) => d.id === useId)) {
+      setDesignChoice({ source: "my_library" });
+      setMyLibraryDesignId(useId);
+    }
+  }, [location.state, user, myLibraryDesigns.length]);
   
   // Filter factory fabrics by selected fabric type
   const availableFabrics = useMemo(() => {
@@ -65,8 +77,9 @@ const Shop = () => {
     if (designChoice.source === "existing" && designPresetId) return { source: "existing", presetId: designPresetId };
     if (designChoice.source === "upload") return { source: "upload", uploadFileName: uploadedFiles.map(f => f.name).join(", ") || "uploaded-file" };
     if (designChoice.source === "repeat" && repeatOrderId) return { source: "repeat", repeatOrderId };
+    if (designChoice.source === "my_library" && myLibraryDesignId) return { source: "my_library", myLibraryDesignId };
     return designChoice;
-  }, [designChoice, designPresetId, uploadedFiles, repeatOrderId]);
+  }, [designChoice, designPresetId, uploadedFiles, repeatOrderId, myLibraryDesignId]);
 
   const resolvedFabricChoice: Partial<FabricChoice> = useMemo(() => {
     const base = { ...fabricChoice };
@@ -84,10 +97,11 @@ const Shop = () => {
     if (designChoice.source === "existing" && !designPresetId) return 0;
     if (designChoice.source === "upload" && uploadedFiles.length === 0) return 0;
     if (designChoice.source === "repeat" && !repeatOrderId) return 0;
+    if (designChoice.source === "my_library" && !myLibraryDesignId) return 0;
     if (fabricChoice.fabricSource === "factory" && !factoryFabricId) return 0;
     if (!fabricChoice.fabricType || !fabricChoice.orderType || !fabricChoice.fabricSource) return 0;
     return ordersApi.computeUnitPrice(resolvedDesignChoice, resolvedFabricChoice as FabricChoice);
-  }, [resolvedDesignChoice, resolvedFabricChoice, designChoice.source, designPresetId, uploadedFiles, repeatOrderId, fabricChoice.fabricSource, factoryFabricId, fabricChoice.fabricType, fabricChoice.orderType]);
+  }, [resolvedDesignChoice, resolvedFabricChoice, designChoice.source, designPresetId, uploadedFiles, repeatOrderId, myLibraryDesignId, fabricChoice.fabricSource, factoryFabricId, fabricChoice.fabricType, fabricChoice.orderType]);
 
   const minimumQuantity = useMemo(() => {
     if (!fabricChoice.fabricType || !fabricChoice.orderType || !fabricChoice.fabricSource) return 1;
@@ -116,7 +130,8 @@ const Shop = () => {
   const canProceedFromStep1 =
     (designChoice.source === "existing" && designPresetId) ||
     (designChoice.source === "upload" && uploadedFiles.length > 0) ||
-    (designChoice.source === "repeat" && repeatOrderId);
+    (designChoice.source === "repeat" && repeatOrderId) ||
+    (designChoice.source === "my_library" && myLibraryDesignId);
 
   const canProceedFromStep2 = 
     fabricChoice.fabricType && 
@@ -128,31 +143,52 @@ const Shop = () => {
 
   const canProceedFromStep3 = quantity >= minimumQuantity;
 
-  const handleSubmitQuotationRequest = () => {
+  const readUploadsAsSnapshots = async (): Promise<{ fileName: string; dataUrl: string }[]> => {
+    if (uploadedFiles.length === 0) return [];
+    return Promise.all(
+      uploadedFiles.map(
+        (file) =>
+          new Promise<{ fileName: string; dataUrl: string }>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve({ fileName: file.name, dataUrl: reader.result as string });
+            reader.onerror = () => reject(new Error("Failed to read file"));
+            reader.readAsDataURL(file);
+          })
+      )
+    );
+  };
+
+  const handleSubmitQuotationRequest = async () => {
     setSubmitError("");
     if (!user) return;
-    
     const finalChoice: DesignChoice =
       designChoice.source === "existing" && designPresetId
         ? { source: "existing", presetId: designPresetId }
         : designChoice.source === "upload"
-          ? { source: "upload", uploadFileName: uploadedFiles.map(f => f.name).join(", ") || "uploaded" }
+          ? { source: "upload", uploadFileName: uploadedFiles.map((f) => f.name).join(", ") || "uploaded" }
           : designChoice.source === "repeat" && repeatOrderId
             ? { source: "repeat", repeatOrderId }
-            : resolvedDesignChoice;
-    
+            : designChoice.source === "my_library" && myLibraryDesignId
+              ? { source: "my_library", myLibraryDesignId }
+              : resolvedDesignChoice;
     try {
       if (!fabricChoice.fabricType || !fabricChoice.orderType || !fabricChoice.fabricSource) {
         throw new Error(t("pages.shop.pleaseCompleteSelections"));
       }
-      // For quotation requests, use default quantity of 1 if not specified
       const requestQuantity = quantity || 1;
+      const myLibDesign = finalChoice.source === "my_library" && finalChoice.myLibraryDesignId ? userDesignsApi.getDesignById(user.id, finalChoice.myLibraryDesignId) : undefined;
+      const myLibSnapshot = myLibDesign?.imageDataUrl ? { name: myLibDesign.name, imageDataUrl: myLibDesign.imageDataUrl } : undefined;
+      const uploadSnapshots = finalChoice.source === "upload" && uploadedFiles.length > 0 ? await readUploadsAsSnapshots() : undefined;
       const order = ordersApi.createQuotationRequest({
         userId: user.id,
         designChoice: finalChoice,
         fabricChoice: resolvedFabricChoice as FabricChoice,
         quantity: requestQuantity,
         notes: notes || (fabricChoice.fabricSource === "customer" ? customerNotes : notSureInquiry) || "",
+        customerName: user.name,
+        customerEmail: user.email,
+        myLibraryDesignSnapshot: myLibSnapshot,
+        uploadSnapshots,
       });
       navigate(`/orders/${order.id}`);
     } catch (e) {
@@ -160,23 +196,26 @@ const Shop = () => {
     }
   };
 
-  const handleSubmitOrder = () => {
+  const handleSubmitOrder = async () => {
     setSubmitError("");
     if (!user) return;
-    
     const finalChoice: DesignChoice =
       designChoice.source === "existing" && designPresetId
         ? { source: "existing", presetId: designPresetId }
         : designChoice.source === "upload"
-          ? { source: "upload", uploadFileName: uploadedFiles.map(f => f.name).join(", ") || "uploaded" }
+          ? { source: "upload", uploadFileName: uploadedFiles.map((f) => f.name).join(", ") || "uploaded" }
           : designChoice.source === "repeat" && repeatOrderId
             ? { source: "repeat", repeatOrderId }
-            : resolvedDesignChoice;
-    
+            : designChoice.source === "my_library" && myLibraryDesignId
+              ? { source: "my_library", myLibraryDesignId }
+              : resolvedDesignChoice;
     try {
       if (!fabricChoice.fabricType || !fabricChoice.orderType || !fabricChoice.fabricSource) {
         throw new Error(t("pages.shop.pleaseCompleteSelections"));
       }
+      const myLibDesignOrder = finalChoice.source === "my_library" && finalChoice.myLibraryDesignId ? userDesignsApi.getDesignById(user.id, finalChoice.myLibraryDesignId) : undefined;
+      const myLibSnapshotOrder = myLibDesignOrder?.imageDataUrl ? { name: myLibDesignOrder.name, imageDataUrl: myLibDesignOrder.imageDataUrl } : undefined;
+      const uploadSnapshots = finalChoice.source === "upload" && uploadedFiles.length > 0 ? await readUploadsAsSnapshots() : undefined;
       const order = ordersApi.createOrder({
         userId: user.id,
         customerType: user.customerType,
@@ -186,6 +225,10 @@ const Shop = () => {
         notes,
         paymentMethod,
         paymentProofFileName: paymentProofFile?.name,
+        customerName: user.name,
+        customerEmail: user.email,
+        myLibraryDesignSnapshot: myLibSnapshotOrder,
+        uploadSnapshots,
       });
       navigate(`/orders/${order.id}`);
     } catch (e) {
@@ -295,13 +338,13 @@ const Shop = () => {
             {step === 1 && (
               <div className="space-y-8 animate-in fade-in duration-500">
                 <div className="text-center mb-8">
-                  <h2 className="font-heading text-4xl font-black text-primary mb-3 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                  <h2 className="font-heading text-4xl font-black mb-3 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
                     {t("pages.shop.step1Title")}
                   </h2>
                   <p className="text-muted-foreground text-lg">{t("pages.shop.step1Subtitle")}</p>
                 </div>
 
-                <div className="grid md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
                   {/* Existing Design */}
                   <button
                     type="button"
@@ -366,6 +409,28 @@ const Shop = () => {
                     </div>
                     <h3 className="font-heading text-xl font-black text-primary mb-2">{t("pages.shop.uploadDesign")}</h3>
                     <p className="text-muted-foreground text-sm">{t("pages.shop.uploadDesignDesc")}</p>
+                  </button>
+
+                  {/* My design (library) */}
+                  <button
+                    type="button"
+                    onClick={() => setDesignChoice({ source: "my_library" })}
+                    className={`group relative p-8 border-2 text-left rounded-2xl transition-all duration-300 hover:shadow-xl hover:-translate-y-1 ${
+                      designChoice.source === "my_library"
+                        ? "border-accent bg-gradient-to-br from-accent/5 to-accent/10 shadow-lg shadow-accent/20"
+                        : "border-gray-200 hover:border-accent/50 bg-white"
+                    }`}
+                  >
+                    <div className="absolute top-4 right-4">
+                      {designChoice.source === "my_library" && (
+                        <CheckCircle2 className="w-6 h-6 text-accent" />
+                      )}
+                    </div>
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                      <Palette className="w-8 h-8 text-white" />
+                    </div>
+                    <h3 className="font-heading text-xl font-black text-primary mb-2">{t("pages.shop.myDesign")}</h3>
+                    <p className="text-muted-foreground text-sm">{t("pages.shop.myDesignDesc")}</p>
                   </button>
                 </div>
 
@@ -432,6 +497,47 @@ const Shop = () => {
                 {designChoice.source === "repeat" && userOrders.length === 0 && (
                   <div className="text-center py-8">
                     <p className="text-muted-foreground">{t("pages.shop.noPreviousOrders")}</p>
+                  </div>
+                )}
+
+                {/* My design (library) selection */}
+                {designChoice.source === "my_library" && (
+                  <div className="animate-in slide-in-from-top duration-500 mt-8">
+                    <p className="font-bold text-primary mb-4 text-lg">{t("pages.shop.selectMyDesign")}</p>
+                    {myLibraryDesigns.length === 0 ? (
+                      <div className="text-center py-8 border-2 border-dashed border-slate-200 rounded-xl">
+                        <Palette className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                        <p className="text-muted-foreground mb-4">{t("pages.patternStudio.noDesignsYet")}</p>
+                        <button
+                          type="button"
+                          onClick={() => navigate("/pattern-studio")}
+                          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white font-bold text-sm hover:opacity-90"
+                        >
+                          <Palette className="w-4 h-4" /> {t("nav.patternStudio")}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                        {myLibraryDesigns.map((d) => (
+                          <button
+                            key={d.id}
+                            type="button"
+                            onClick={() => setMyLibraryDesignId(d.id)}
+                            className={`p-4 border-2 rounded-xl text-left transition-all duration-300 hover:shadow-lg ${
+                              myLibraryDesignId === d.id
+                                ? "border-accent bg-accent/5 shadow-md shadow-accent/20"
+                                : "border-gray-200 hover:border-accent/50"
+                            }`}
+                          >
+                            <div
+                              className="aspect-square rounded-lg mb-3 bg-slate-100 bg-repeat bg-center"
+                              style={{ backgroundImage: `url(${d.imageDataUrl})`, backgroundSize: "60px" }}
+                            />
+                            <p className="font-heading font-bold text-primary text-sm truncate">{d.name}</p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -590,7 +696,7 @@ const Shop = () => {
             {step === 2 && (
               <div className="space-y-5 animate-in fade-in duration-500">
                 <div className="text-center mb-6">
-                  <h2 className="font-heading text-3xl font-black text-primary mb-2 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                  <h2 className="font-heading text-3xl font-black mb-2 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
                     {t("pages.shop.fabricOrderType")}
                   </h2>
                   <p className="text-muted-foreground text-sm">{t("pages.shop.configureDetails")}</p>
@@ -869,7 +975,7 @@ const Shop = () => {
             {step === 3 && shouldShowStep3 && (
               <div className="space-y-8 animate-in fade-in duration-500">
                 <div className="text-center mb-8">
-                  <h2 className="font-heading text-4xl font-black text-primary mb-3 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                  <h2 className="font-heading text-4xl font-black mb-3 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
                     {t("pages.shop.quantityTitle")}
                   </h2>
                   <p className="text-muted-foreground text-lg">{t("pages.shop.quantitySubtitle")}</p>
@@ -928,7 +1034,7 @@ const Shop = () => {
             {step === 4 && shouldShowStep4 && (
               <div className="space-y-8 animate-in fade-in duration-500">
                 <div className="text-center mb-8">
-                  <h2 className="font-heading text-4xl font-black text-primary mb-3 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                  <h2 className="font-heading text-4xl font-black mb-3 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
                     {t("pages.shop.pricingSummary")}
                   </h2>
                   <p className="text-muted-foreground text-lg">{t("pages.shop.reviewDetails")}</p>
@@ -994,7 +1100,7 @@ const Shop = () => {
             {step === 5 && (
               <div className="space-y-8 animate-in fade-in duration-500">
                 <div className="text-center mb-8">
-                  <h2 className="font-heading text-4xl font-black text-primary mb-3 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                  <h2 className="font-heading text-4xl font-black mb-3 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
                     {t("pages.shop.paymentMethod")}
                   </h2>
                   <p className="text-muted-foreground text-lg">{t("pages.shop.choosePayment")}</p>
@@ -1102,4 +1208,4 @@ const Shop = () => {
   );
 };
 
-export default Shop;
+export { Shop as default };
