@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Quote, ChevronLeft, ChevronRight } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import aboutImage from "@/assets/about-printing.jpg";
 
 interface Testimonial {
@@ -9,35 +10,36 @@ interface Testimonial {
   initials: string;
 }
 
-const testimonials: Testimonial[] = [
-  {
-    text: "Amazing print quality and vibrant colors! DTX brought my designs to life perfectly. Highly recommend their professional team for any high-end textile project.",
-    name: "Yomna Ahmed",
-    company: "Floki Systems",
-    initials: "YA"
-  },
-  {
-    text: "Outstanding service and exceptional quality! The team at DTX understood our vision and delivered beyond expectations. The fabric printing was flawless and the colors were exactly as we requested.",
-    name: "Mohamed Ali",
-    company: "Design Studio",
-    initials: "MA"
-  },
-  {
-    text: "Working with DTX has been a game-changer for our business. Their attention to detail and commitment to quality is unmatched. We've received countless compliments on our printed fabrics.",
-    name: "Sarah Hassan",
-    company: "Fashion Brand",
-    initials: "SH"
-  },
-  {
-    text: "Professional, reliable, and creative! DTX transformed our ideas into beautiful printed fabrics. The turnaround time was impressive and the quality exceeded our expectations.",
-    name: "Ahmed Mostafa",
-    company: "Textile Company",
-    initials: "AM"
-  }
-];
-
 const TestimonialsSection = () => {
+  const { t } = useTranslation();
   const [current, setCurrent] = useState(0);
+
+  const testimonials: Testimonial[] = useMemo(() => [
+    {
+      text: t("testimonials.testimonial1.text"),
+      name: t("testimonials.testimonial1.name"),
+      company: t("testimonials.testimonial1.company"),
+      initials: "YA"
+    },
+    {
+      text: t("testimonials.testimonial2.text"),
+      name: t("testimonials.testimonial2.name"),
+      company: t("testimonials.testimonial2.company"),
+      initials: "MA"
+    },
+    {
+      text: t("testimonials.testimonial3.text"),
+      name: t("testimonials.testimonial3.name"),
+      company: t("testimonials.testimonial3.company"),
+      initials: "SH"
+    },
+    {
+      text: t("testimonials.testimonial4.text"),
+      name: t("testimonials.testimonial4.name"),
+      company: t("testimonials.testimonial4.company"),
+      initials: "AM"
+    }
+  ], [t]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -69,11 +71,11 @@ const TestimonialsSection = () => {
             <div className="flex items-center gap-4 mb-6">
               <span className="w-12 h-0.5 bg-accent rounded-full"></span>
               <p className="text-accent text-[10px] font-bold uppercase tracking-[0.3em]">
-                Clients Reviews
+                {t("testimonials.label")}
               </p>
             </div>
             <h2 className="font-heading text-4xl md:text-5xl font-black text-primary mb-12 tracking-tight">
-              What Our Clients Say About Us
+              {t("testimonials.heading")}
             </h2>
             
             <div className="relative">

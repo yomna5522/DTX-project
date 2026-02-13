@@ -77,6 +77,30 @@
     "copyright": "Copyright © 2024 DTX Factory. All Rights Reserved.",
     "poweredBy": "Powered by Floki Systems"
   },
+  "testimonials": {
+    "label": "Clients Reviews",
+    "heading": "What Our Clients Say About Us",
+    "testimonial1": {
+      "text": "Amazing print quality and vibrant colors! DTX brought my designs to life perfectly. Highly recommend their professional team for any high-end textile project.",
+      "name": "Yomna Ahmed",
+      "company": "Floki Systems"
+    },
+    "testimonial2": {
+      "text": "Outstanding service and exceptional quality! The team at DTX understood our vision and delivered beyond expectations. The fabric printing was flawless and the colors were exactly as we requested.",
+      "name": "Mohamed Ali",
+      "company": "Design Studio"
+    },
+    "testimonial3": {
+      "text": "Working with DTX has been a game-changer for our business. Their attention to detail and commitment to quality is unmatched. We've received countless compliments on our printed fabrics.",
+      "name": "Sarah Hassan",
+      "company": "Fashion Brand"
+    },
+    "testimonial4": {
+      "text": "Professional, reliable, and creative! DTX transformed our ideas into beautiful printed fabrics. The turnaround time was impressive and the quality exceeded our expectations.",
+      "name": "Ahmed Mostafa",
+      "company": "Textile Company"
+    }
+  },
   "pages": {
     "contact": {
       "title": "CONTACT US",
