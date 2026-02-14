@@ -9,6 +9,7 @@ import { Search, UploadCloud, RefreshCcw, ArrowRight, ArrowLeft, FileText, Packa
 import { useAuth } from "@/contexts/AuthContext";
 import { ordersApi } from "@/api/orders";
 import { userDesignsApi } from "@/api/userDesigns";
+import { PatternThumbnail } from "@/components/PatternThumbnail";
 import type { DesignChoice, FabricChoice, DesignSource, FabricType, FabricSource, PaymentMethod, OrderType } from "@/types/order";
 import heroPrinting from "@/assets/hero-printing.jpg";
 import aestheticWallpaper from "@/assets/𝘈𝘦𝘴𝘵𝘩𝘦𝘵𝘪𝘤 𝘞𝘢𝘭𝘭𝘱𝘢𝘱𝘦𝘳.jpg";
@@ -177,7 +178,14 @@ const Shop = () => {
       }
       const requestQuantity = quantity || 1;
       const myLibDesign = finalChoice.source === "my_library" && finalChoice.myLibraryDesignId ? userDesignsApi.getDesignById(user.id, finalChoice.myLibraryDesignId) : undefined;
-      const myLibSnapshot = myLibDesign?.imageDataUrl ? { name: myLibDesign.name, imageDataUrl: myLibDesign.imageDataUrl } : undefined;
+      const myLibSnapshot = myLibDesign?.imageDataUrl ? {
+        name: myLibDesign.name,
+        imageDataUrl: myLibDesign.imageDataUrl,
+        ...(myLibDesign.repeatType && { repeatType: myLibDesign.repeatType }),
+        ...(myLibDesign.fabricChoice && { fabricChoice: myLibDesign.fabricChoice }),
+        ...(myLibDesign.fabricCutChoice && { fabricCutChoice: myLibDesign.fabricCutChoice }),
+        ...(myLibDesign.tileSize != null && { tileSize: myLibDesign.tileSize }),
+      } : undefined;
       const uploadSnapshots = finalChoice.source === "upload" && uploadedFiles.length > 0 ? await readUploadsAsSnapshots() : undefined;
       const order = ordersApi.createQuotationRequest({
         userId: user.id,
@@ -214,7 +222,14 @@ const Shop = () => {
         throw new Error(t("pages.shop.pleaseCompleteSelections"));
       }
       const myLibDesignOrder = finalChoice.source === "my_library" && finalChoice.myLibraryDesignId ? userDesignsApi.getDesignById(user.id, finalChoice.myLibraryDesignId) : undefined;
-      const myLibSnapshotOrder = myLibDesignOrder?.imageDataUrl ? { name: myLibDesignOrder.name, imageDataUrl: myLibDesignOrder.imageDataUrl } : undefined;
+      const myLibSnapshotOrder = myLibDesignOrder?.imageDataUrl ? {
+        name: myLibDesignOrder.name,
+        imageDataUrl: myLibDesignOrder.imageDataUrl,
+        ...(myLibDesignOrder.repeatType && { repeatType: myLibDesignOrder.repeatType }),
+        ...(myLibDesignOrder.fabricChoice && { fabricChoice: myLibDesignOrder.fabricChoice }),
+        ...(myLibDesignOrder.fabricCutChoice && { fabricCutChoice: myLibDesignOrder.fabricCutChoice }),
+        ...(myLibDesignOrder.tileSize != null && { tileSize: myLibDesignOrder.tileSize }),
+      } : undefined;
       const uploadSnapshots = finalChoice.source === "upload" && uploadedFiles.length > 0 ? await readUploadsAsSnapshots() : undefined;
       const order = ordersApi.createOrder({
         userId: user.id,
@@ -529,11 +544,20 @@ const Shop = () => {
                                 : "border-gray-200 hover:border-accent/50"
                             }`}
                           >
-                            <div
-                              className="aspect-square rounded-lg mb-3 bg-slate-100 bg-repeat bg-center"
-                              style={{ backgroundImage: `url(${d.imageDataUrl})`, backgroundSize: "60px" }}
-                            />
+                            <div className="aspect-square rounded-lg mb-3 bg-slate-100 overflow-hidden">
+                              <PatternThumbnail
+                                imageDataUrl={d.imageDataUrl}
+                                repeatType={d.repeatType}
+                                tileSize={d.tileSize ?? 60}
+                                className="min-w-full min-h-full rounded-lg"
+                              />
+                            </div>
                             <p className="font-heading font-bold text-primary text-sm truncate">{d.name}</p>
+                            {d.repeatType && (
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {d.repeatType === "full_drop" ? t("pages.patternStudio.fullDrop") : d.repeatType === "half_drop" ? t("pages.patternStudio.halfDrop") : d.repeatType === "centre" ? t("pages.patternStudio.centre") : d.repeatType === "mirror" ? t("pages.patternStudio.mirror") : ""}
+                              </p>
+                            )}
                           </button>
                         ))}
                       </div>

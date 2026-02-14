@@ -62,7 +62,14 @@ export interface OrderItem {
   unitPrice: number;
   totalPrice: number;
   /** When design is from customer’s Pattern Studio library, store a snapshot so management can show the design */
-  myLibraryDesignSnapshot?: { name: string; imageDataUrl: string };
+  myLibraryDesignSnapshot?: {
+    name: string;
+    imageDataUrl: string;
+    repeatType?: "full_drop" | "half_drop" | "centre" | "mirror";
+    fabricChoice?: string;
+    fabricCutChoice?: string;
+    tileSize?: number;
+  };
   /** When design is upload(s), store snapshots so management can show and download all files */
   uploadSnapshots?: { fileName: string; dataUrl: string }[];
 }

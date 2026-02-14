@@ -22,6 +22,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PatternThumbnail } from "@/components/PatternThumbnail";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
   AlertDialog,
@@ -665,18 +666,29 @@ const Orders = () => {
                       </div>
                     )}
 
-                    {/* My library */}
+                    {/* My library – design with repeat & fabric reflected */}
                     {item.designChoice.source === "my_library" && (item.myLibraryDesignSnapshot ?? item.designChoice.myLibraryDesignId) && (() => {
                       const snapshot = item.myLibraryDesignSnapshot;
                       const name = snapshot?.name ?? userDesignsApi.getDesignById(selectedOrder!.userId, item.designChoice.myLibraryDesignId!)?.name ?? item.designChoice.myLibraryDesignId;
                       const imageUrl = snapshot?.imageDataUrl;
                       if (!imageUrl) return <p className="text-sm text-slate-500">My library: {name}</p>;
+                      const repeatType = snapshot?.repeatType;
+                      const fabricChoice = snapshot?.fabricChoice;
+                      const tileSize = snapshot?.tileSize ?? 56;
+                      const repeatLabel = repeatType === "full_drop" ? "Full drop" : repeatType === "half_drop" ? "Half drop" : repeatType === "centre" ? "Centre" : repeatType === "mirror" ? "Mirror" : null;
                       return (
                         <div className="flex flex-wrap items-start gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100">
-                          <div className="w-28 h-28 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 bg-repeat bg-center shrink-0" style={{ backgroundImage: `url(${imageUrl})`, backgroundSize: "56px" }} />
+                          <div className="w-28 h-28 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 shrink-0">
+                            <PatternThumbnail imageDataUrl={imageUrl} repeatType={repeatType} tileSize={tileSize} className="min-w-full min-h-full rounded-lg" />
+                          </div>
                           <div className="min-w-0 flex-1">
                             <p className="font-bold text-slate-900">{name}</p>
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Customer’s Pattern Studio design</p>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Customer’s Design Studio design</p>
+                            {(repeatLabel || fabricChoice) && (
+                              <p className="text-xs text-slate-600 mt-1">
+                                {[repeatLabel, fabricChoice].filter(Boolean).join(" · ")}
+                              </p>
+                            )}
                             <div className="flex flex-wrap gap-2 mt-3">
                               <a href={imageUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold hover:opacity-90">
                                 <ExternalLink size={14} /> View full size
@@ -708,7 +720,9 @@ const Orders = () => {
                                 </div>
                               )}
                               {repeatedItem?.myLibraryDesignSnapshot?.imageDataUrl && (
-                                <div className="w-14 h-14 rounded-lg border border-slate-200 bg-repeat bg-center" style={{ backgroundImage: `url(${repeatedItem.myLibraryDesignSnapshot.imageDataUrl})`, backgroundSize: "28px" }} title={repeatedItem.myLibraryDesignSnapshot.name} />
+                                <div className="w-14 h-14 rounded-lg border border-slate-200 overflow-hidden bg-slate-100 shrink-0" title={repeatedItem.myLibraryDesignSnapshot.name}>
+                                  <PatternThumbnail imageDataUrl={repeatedItem.myLibraryDesignSnapshot.imageDataUrl} repeatType={repeatedItem.myLibraryDesignSnapshot.repeatType} tileSize={repeatedItem.myLibraryDesignSnapshot.tileSize ?? 28} className="min-w-full min-h-full" />
+                                </div>
                               )}
                               {repeatedItem?.uploadSnapshots?.slice(0, 3).map((s, i) => (
                                 <img key={i} src={s.dataUrl} alt={s.fileName} className="w-14 h-14 rounded-lg object-cover border border-slate-200" />

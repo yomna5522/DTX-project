@@ -100,17 +100,9 @@ const ManagementLayout = ({ children }: { children: React.ReactNode }) => {
 
   const SidebarContent = () => (
     <>
-      <div className="p-6">
-        <Link to="/" className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-primary/5 rounded-xl flex items-center justify-center p-1.5 border border-primary/10">
-            <img src="/src/assets/Logo.png" alt="DTX Logo" className="w-full h-full object-contain filter drop-shadow-sm" />
-          </div>
-          <div className="flex flex-col">
-            <span className="font-heading font-black text-lg leading-tight tracking-tighter text-primary uppercase">
-              DTX <span className="text-accent italic">PC</span>
-            </span>
-            <span className="text-[10px] font-bold text-slate-400 -mt-1 uppercase tracking-widest">PRINTING CENTER</span>
-          </div>
+      <div className="w-full p-4 flex items-center justify-center border-b border-slate-100">
+        <Link to="/" className="block w-full" aria-label="DTX Home">
+          <img src="/src/assets/Logo.png" alt="DTX Logo" className="w-full h-auto max-h-12 object-contain object-center filter drop-shadow-sm" />
         </Link>
       </div>
 

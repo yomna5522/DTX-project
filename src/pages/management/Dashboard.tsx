@@ -217,7 +217,7 @@ const Dashboard = () => {
         {/* Welcome Section */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
            <div>
-              <h1 className="text-3xl font-black text-slate-900 tracking-tight">Dashboard</h1>
+              <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">Dashboard <span className="text-primary underline decoration-accent decoration-4 underline-offset-4">Overview</span></h1>
               <p className="text-slate-500 text-sm font-medium mt-1">Overview of your business performance.</p>
            </div>
            <div className="flex items-center gap-3">
