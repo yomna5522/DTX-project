@@ -94,4 +94,6 @@ export interface Order {
   createdAt: string;
   updatedAt: string;
   estimatedCompletion?: string;
+  /** Optional link to the production-side customer entity */
+  customerEntityId?: string;
 }

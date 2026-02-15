@@ -40,6 +40,7 @@ import HRM from "./pages/management/HRM";
 import ControlCenter from "./pages/management/Settings";
 import FabricInventory from "./pages/management/FabricInventory";
 import DesignLibrary from "./pages/management/DesignLibrary";
+import ImportWizard from "./pages/management/ImportWizard";
 
 import NotFound from "./pages/NotFound";
 import ScrollToTop from "./components/ScrollToTop";
@@ -88,6 +89,7 @@ const App = () => {
             <Route path="/management/production/templates" element={<ProductionTemplates />} />
             <Route path="/management/financials" element={<Financials />} />
             <Route path="/management/invoices" element={<Invoices />} />
+            <Route path="/management/import" element={<ImportWizard />} />
             <Route path="/management/hrm" element={<HRM />} />
             <Route path="/management/settings" element={<ControlCenter />} />
 

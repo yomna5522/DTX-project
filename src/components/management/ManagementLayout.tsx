@@ -23,7 +23,8 @@ import {
   Percent,
   Mail,
   Menu,
-  Palette
+  Palette,
+  Upload
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -87,6 +88,7 @@ const ManagementLayout = ({ children }: { children: React.ReactNode }) => {
         { icon: Banknote, label: "Expenses", href: "/management/expenses" },
         { icon: Wallet, label: "Master Ledger", href: "/management/financials" },
         { icon: FileText, label: "Billing Vault", href: "/management/invoices" },
+        { icon: Upload, label: "Import Wizard", href: "/management/import" },
       ]
     },
     {
