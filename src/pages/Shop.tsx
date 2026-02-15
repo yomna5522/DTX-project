@@ -127,6 +127,13 @@ const Shop = () => {
     }
   }, [step]);
 
+  // Default quantity to minimum when on step 3 and enforce min when min changes
+  useEffect(() => {
+    if (step === 3) {
+      setQuantity((q) => Math.max(q, minimumQuantity));
+    }
+  }, [step, minimumQuantity]);
+
   // Validation for each step
   const canProceedFromStep1 =
     (designChoice.source === "existing" && designPresetId) ||
@@ -207,6 +214,10 @@ const Shop = () => {
   const handleSubmitOrder = async () => {
     setSubmitError("");
     if (!user) return;
+    if (paymentMethod === "instapay" && !paymentProofFile) {
+      setSubmitError(t("pages.shop.paymentProofRequired"));
+      return;
+    }
     const finalChoice: DesignChoice =
       designChoice.source === "existing" && designPresetId
         ? { source: "existing", presetId: designPresetId }
@@ -820,8 +831,8 @@ const Shop = () => {
                     ))}
                   </div>
                   {fabricChoice.orderType === "sample" && fabricChoice.fabricType && (
-                    <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                      <p className="text-xs text-amber-800 font-medium">
+                    <div className="mt-3 p-4 bg-amber-100 border-2 border-amber-300 rounded-xl">
+                      <p className="text-base font-black text-amber-900 uppercase tracking-tight">
                         ℹ️ {t("pages.shop.minimum")}: {fabricChoice.fabricType === "sublimation" ? `1 ${t("pages.shop.meter")}` : `5 ${t("pages.shop.meters")}`}
                       </p>
                     </div>
@@ -944,9 +955,9 @@ const Shop = () => {
                             <div className="flex-1">
                               <h4 className="font-heading font-bold text-primary mb-1 text-sm">{fabric.name}</h4>
                               <p className="text-xs text-muted-foreground mb-2">{fabric.description}</p>
-                              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                                <span className="px-2 py-1 bg-gray-100 rounded capitalize">{fabric.type}</span>
-                                <span>{t("pages.shop.min")}: {fabric.minimumQuantity}m</span>
+                              <div className="flex items-center gap-3 flex-wrap">
+                                <span className="px-2 py-1 bg-gray-100 rounded capitalize text-xs text-muted-foreground">{fabric.type}</span>
+                                <span className="text-sm font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded">{t("pages.shop.min")}: {fabric.minimumQuantity} m</span>
                               </div>
                             </div>
                             <div className="text-right flex-shrink-0">
@@ -1006,6 +1017,12 @@ const Shop = () => {
                 </div>
 
                 <div className="bg-gradient-to-br from-blue-50 to-white p-8 rounded-xl border border-blue-100">
+                  <div className="mb-4 p-4 rounded-xl bg-amber-100 border-2 border-amber-300">
+                    <p className="text-lg sm:text-xl font-black text-amber-900 uppercase tracking-tight">
+                      {t("pages.shop.minimumOrder")}: {minimumQuantity} {t("pages.shop.meters")}
+                    </p>
+                    <p className="text-sm text-amber-800 mt-1">{t("pages.shop.minimumOrderHint")}</p>
+                  </div>
                   <label className="block font-bold text-primary mb-4 text-lg">{t("pages.shop.quantityMeters")}</label>
                   <div className="flex items-center gap-4">
                     <input
@@ -1017,10 +1034,6 @@ const Shop = () => {
                     />
                     <span className="text-muted-foreground font-medium">{t("pages.shop.meters")}</span>
                   </div>
-                  <p className="text-sm text-muted-foreground mt-3 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-accent"></span>
-                    {t("pages.shop.minimumQuantity")}: {minimumQuantity} {t("pages.shop.meters")}
-                  </p>
                 </div>
 
                 <div>
@@ -1179,18 +1192,22 @@ const Shop = () => {
 
                 {paymentMethod === "instapay" && (
                   <div className="animate-in slide-in-from-top duration-500">
-                    <label className="block font-bold text-primary mb-3 text-lg">{t("pages.shop.paymentProof")}</label>
-                    <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-accent transition-colors bg-gray-50/50">
+                    <label className="block font-bold text-primary mb-3 text-lg">
+                      {t("pages.shop.paymentProof")} <span className="text-red-600 font-black">*</span>
+                    </label>
+                    <div className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors ${!paymentProofFile ? "border-red-300 bg-red-50/50 hover:border-red-400" : "border-gray-300 bg-gray-50/50 hover:border-accent"}`}>
                       <input
                         type="file"
                         accept=".pdf,.png,.jpg,.jpeg"
                         onChange={(e) => setPaymentProofFile(e.target.files?.[0] ?? null)}
                         className="block w-full text-sm text-muted-foreground file:mr-4 file:py-3 file:px-6 file:rounded-lg file:border-0 file:bg-accent file:text-white file:font-bold file:cursor-pointer hover:file:bg-accent/90 file:transition-colors"
                       />
-                      {paymentProofFile && (
+                      {paymentProofFile ? (
                         <p className="text-sm text-accent font-medium mt-3 flex items-center justify-center gap-2">
                           <CheckCircle2 className="w-4 h-4" /> {paymentProofFile.name}
                         </p>
+                      ) : (
+                        <p className="text-sm text-red-600 font-medium mt-3">{t("pages.shop.paymentProofRequired")}</p>
                       )}
                     </div>
                   </div>
@@ -1213,7 +1230,8 @@ const Shop = () => {
                   <button
                     type="button"
                     onClick={handleSubmitOrder}
-                    className="group bg-gradient-to-r from-green-500 to-green-600 text-white pl-10 pr-5 py-5 flex items-center gap-3 font-bold text-sm tracking-wider uppercase rounded-xl shadow-lg shadow-green-500/30 hover:shadow-xl hover:shadow-green-500/40 transition-all hover:-translate-y-0.5"
+                    disabled={paymentMethod === "instapay" && !paymentProofFile}
+                    className="group bg-gradient-to-r from-green-500 to-green-600 text-white pl-10 pr-5 py-5 flex items-center gap-3 font-bold text-sm tracking-wider uppercase rounded-xl shadow-lg shadow-green-500/30 hover:shadow-xl hover:shadow-green-500/40 transition-all hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
                   >
                     <CheckCircle2 className="w-5 h-5" />
                     {t("pages.shop.submitOrder")} 
