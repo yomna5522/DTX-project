@@ -263,6 +263,11 @@ export const productionApi = {
     return true;
   },
 
+  /** Remove all production runs (clears Production Forge data) */
+  clearAllRuns(): void {
+    saveRuns([]);
+  },
+
   /** Bulk-approve selected runs for billing */
   approveRuns(ids: string[]): number {
     const runs = getRuns();

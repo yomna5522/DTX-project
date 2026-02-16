@@ -16,6 +16,8 @@ export interface ProductionRun {
   fabric: string;
   /** Linear meters actually printed */
   metersPrinted: number;
+  /** Optional quantity (pieces/items) when the sheet uses Quantity instead of or in addition to meters */
+  quantity?: number;
   /** Free-text notes */
   notes: string;
   /** Optional link back to the shop order that triggered this run */

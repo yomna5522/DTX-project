@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useRef } from "react";
 import ManagementLayout from "@/components/management/ManagementLayout";
 import {
   Upload,
@@ -25,6 +25,7 @@ const TARGET_FIELDS = [
   { key: "designRef", label: "Design Reference", required: true },
   { key: "fabric", label: "Fabric", required: true },
   { key: "metersPrinted", label: "Meters Printed", required: true },
+  { key: "quantity", label: "Quantity", required: false },
   { key: "notes", label: "Notes", required: false },
   { key: "sourceOrderId", label: "Source Order ID", required: false },
 ] as const;
@@ -52,8 +53,60 @@ const ImportWizard = () => {
   // Result
   const [importedCount, setImportedCount] = useState(0);
 
+  // Raw sheet rows so we can re-parse with a different header row
+  const rawRowsRef = useRef<unknown[][]>([]);
+  const [headerRowIndex, setHeaderRowIndex] = useState(0);
+  const [rawRowCount, setRawRowCount] = useState(0);
+
   const customers = useMemo(() => productionApi.getAllCustomerEntities(), []);
   const machines = productionApi.getMachines();
+
+  const applyHeaderRow = useCallback((rowIndex: number, rawRows: unknown[][]) => {
+    if (rawRows.length <= rowIndex) return;
+    const headerRow = (rawRows[rowIndex] as unknown[]).map((c) =>
+      String(c ?? "")
+        .trim()
+        .replace(/^_?EMPTY(_\d+)?$/i, "")
+    );
+    const colNames: string[] = [];
+    const seen = new Set<string>();
+    for (let i = 0; i < headerRow.length; i++) {
+      let name = headerRow[i] || `Column ${i + 1}`;
+      if (seen.has(name)) {
+        let n = 1;
+        while (seen.has(`${name} (${n})`)) n++;
+        name = `${name} (${n})`;
+      }
+      seen.add(name);
+      colNames.push(name);
+    }
+    const json: Record<string, unknown>[] = [];
+    const dataStart = rowIndex + 1;
+    for (let r = dataStart; r < rawRows.length; r++) {
+      const row = rawRows[r] as unknown[];
+      const obj: Record<string, unknown> = {};
+      for (let c = 0; c < colNames.length; c++) {
+        obj[colNames[c]] = (row as unknown[])[c] ?? "";
+      }
+      json.push(obj);
+    }
+    setColumns(colNames);
+    setRawData(json);
+    const autoMap: Record<string, string> = {};
+    for (const tf of TARGET_FIELDS) {
+      const match = colNames.find(
+        (c) =>
+          c.toLowerCase().includes(tf.key.toLowerCase()) ||
+          c.toLowerCase().includes(tf.label.toLowerCase()) ||
+          (tf.key === "metersPrinted" && c.toLowerCase().includes("meter")) ||
+          (tf.key === "designRef" && c.toLowerCase().includes("design")) ||
+          (tf.key === "date" && c.toLowerCase().includes("date")) ||
+          (tf.key === "quantity" && c.toLowerCase().includes("quantity"))
+      );
+      if (match) autoMap[tf.key] = match;
+    }
+    setMapping(autoMap as Record<TargetKey, string>);
+  }, []);
 
   // ── Step 1: Upload ──────────────────────────────────────
   const handleFile = useCallback((file: File) => {
@@ -77,28 +130,36 @@ const ImportWizard = () => {
   const selectSheet = (wb: XLSX.WorkBook, name: string) => {
     setSelectedSheet(name);
     const ws = wb.Sheets[name];
-    const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, {
+    const rawRows = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+      header: 1,
       defval: "",
-    });
-    setRawData(json);
-    if (json.length > 0) {
-      const cols = Object.keys(json[0]);
-      setColumns(cols);
-      // Auto-map: match by name similarity
-      const autoMap: Record<string, string> = {};
-      for (const tf of TARGET_FIELDS) {
-        const match = cols.find(
-          (c) =>
-            c.toLowerCase().includes(tf.key.toLowerCase()) ||
-            c.toLowerCase().includes(tf.label.toLowerCase()) ||
-            tf.key === "metersPrinted" && c.toLowerCase().includes("meter") ||
-            tf.key === "designRef" && c.toLowerCase().includes("design") ||
-            tf.key === "date" && c.toLowerCase().includes("date")
-        );
-        if (match) autoMap[tf.key] = match;
-      }
-      setMapping(autoMap as Record<TargetKey, string>);
+    }) as unknown[][];
+    rawRowsRef.current = rawRows;
+    setRawRowCount(rawRows.length);
+    if (rawRows.length === 0) {
+      setRawData([]);
+      setColumns([]);
+      return;
     }
+    const firstRow = (rawRows[0] as unknown[]).map((c) => String(c ?? "").trim());
+    const secondRow =
+      rawRows.length >= 2
+        ? (rawRows[1] as unknown[]).map((c) => String(c ?? "").trim())
+        : [];
+    const firstRowUnique = [...new Set(firstRow.filter(Boolean))];
+    const headerLike =
+      /date|machine|design|fabric|meter|customer|order|note|reference|printed|sublimation/i;
+    const looksLikeTitle = (s: string) =>
+      /production|sublimation|^\d{4}$|^20\d{2}$/.test(s) || s.length > 40;
+    const useSecondRowAsHeader =
+      rawRows.length >= 2 &&
+      (firstRowUnique.length <= 1 ||
+        firstRow.every((c) => !c || c.length > 30) ||
+        firstRow.some((c) => c && looksLikeTitle(c)) ||
+        secondRow.some((c) => c && headerLike.test(c)));
+    const initialHeaderRow = useSecondRowAsHeader ? 1 : 0;
+    setHeaderRowIndex(initialHeaderRow);
+    applyHeaderRow(initialHeaderRow, rawRows);
   };
 
   // ── Preview data ────────────────────────────────────────
@@ -136,6 +197,14 @@ const ImportWizard = () => {
       const metersRaw = mapping.metersPrinted ? row[mapping.metersPrinted] : 0;
       const meters = typeof metersRaw === "number" ? metersRaw : parseFloat(String(metersRaw)) || 0;
 
+      const quantityRaw = mapping.quantity ? row[mapping.quantity] : undefined;
+      const quantity =
+        quantityRaw !== undefined && quantityRaw !== ""
+          ? typeof quantityRaw === "number"
+            ? quantityRaw
+            : parseInt(String(quantityRaw), 10) || undefined
+          : undefined;
+
       return {
         date: dateStr,
         machine: String(
@@ -146,6 +215,7 @@ const ImportWizard = () => {
         designRef: String((mapping.designRef ? row[mapping.designRef] : "") || "Unknown"),
         fabric: String((mapping.fabric ? row[mapping.fabric] : "") || "Unknown"),
         metersPrinted: meters,
+        ...(quantity !== undefined && { quantity }),
         notes: String((mapping.notes ? row[mapping.notes] : "") || ""),
         sourceOrderId: (mapping.sourceOrderId ? String(row[mapping.sourceOrderId] || "") : undefined) || undefined,
         billingStatus: defaultBillingStatus,
@@ -296,8 +366,35 @@ const ImportWizard = () => {
               </h3>
               <p className="text-sm text-slate-400 font-medium">
                 Found {rawData.length} rows and {columns.length} columns in{" "}
-                <span className="font-bold text-primary">{selectedSheet || fileName}</span>
+                <span className="font-bold text-primary">{selectedSheet || fileName}</span>.
+                Choose which column goes to each field, or “— skip —” to leave that field empty/default.
               </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100">
+              <span className="text-xs font-black text-slate-500 uppercase tracking-widest">
+                Header row (where your column names are):
+              </span>
+              <select
+                value={headerRowIndex}
+                onChange={(e) => {
+                  const idx = Number(e.target.value);
+                  setHeaderRowIndex(idx);
+                  if (rawRowsRef.current.length > 0) applyHeaderRow(idx, rawRowsRef.current);
+                }}
+                className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-bold bg-white"
+              >
+                {Array.from({ length: Math.min(6, rawRowCount) }, (_, i) => (
+                  <option key={i} value={i}>
+                    Row {i + 1}
+                    {i === 0 && " (first row)"}
+                    {i === 1 && " (second row)"}
+                  </option>
+                ))}
+              </select>
+              <span className="text-xs text-slate-400">
+                If you see only "Column 1", "A", or "_EMPTY", try Row 2 or Row 3.
+              </span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -317,7 +414,7 @@ const ImportWizard = () => {
                     }
                     className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-bold bg-white"
                   >
-                    <option value="">— skip —</option>
+                    <option value="">— skip — (don’t use a column for this field)</option>
                     {columns.map((col) => (
                       <option key={col} value={col}>
                         {col}

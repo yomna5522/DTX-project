@@ -68,6 +68,7 @@ const ProductionForge = () => {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingRun, setEditingRun] = useState<ProductionRun | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProductionRun | null>(null);
+  const [showClearAllConfirm, setShowClearAllConfirm] = useState(false);
 
   // Form state
   const [formDate, setFormDate] = useState(new Date().toISOString().split("T")[0]);
@@ -245,8 +246,41 @@ const ProductionForge = () => {
               <Plus size={20} />
               <span className="hidden lg:inline">Log Run</span>
             </button>
+            {allRuns.length > 0 && (
+              <button
+                onClick={() => setShowClearAllConfirm(true)}
+                className="p-4 lg:px-6 rounded-[22px] border-2 border-red-100 text-red-600 font-black text-xs tracking-widest hover:bg-red-50 transition-all flex items-center gap-2 uppercase whitespace-nowrap"
+              >
+                <Trash2 size={18} />
+                <span className="hidden lg:inline">Clear all</span>
+              </button>
+            )}
           </div>
         </div>
+
+        {/* Clear all confirmation */}
+        <AlertDialog open={showClearAllConfirm} onOpenChange={setShowClearAllConfirm}>
+          <AlertDialogContent>
+            <AlertDialogTitle>Clear all production data?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove all {allRuns.length} run(s) from the Production Log. This cannot be undone.
+            </AlertDialogDescription>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  productionApi.clearAllRuns();
+                  setSelectedIds(new Set());
+                  setRefresh((r) => r + 1);
+                  setShowClearAllConfirm(false);
+                }}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Clear all
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Stats row */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
