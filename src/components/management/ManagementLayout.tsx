@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { 
   LayoutDashboard, 
@@ -7,17 +7,13 @@ import {
   BarChart3, 
   Settings, 
   LogOut,
-  Package,
   TrendingUp,
   AlertTriangle,
   Building2,
   Layers,
-  Receipt,
-  Wallet,
   Banknote,
   Cpu,
   FileText,
-  Briefcase,
   ShieldCheck,
   Activity,
   Percent,
@@ -34,11 +30,18 @@ interface SidebarItemProps {
   label: string;
   href: string;
   active?: boolean;
+  onBeforeNavigate?: (scrollTop: number) => void;
 }
 
-const SidebarItem = ({ icon: Icon, label, href, active }: SidebarItemProps) => (
+const SidebarItem = ({ icon: Icon, label, href, active, onBeforeNavigate }: SidebarItemProps) => (
   <Link
     to={href}
+    onClick={(e) => {
+      if (onBeforeNavigate) {
+        const nav = (e.currentTarget as HTMLElement).closest("nav");
+        if (nav) onBeforeNavigate(nav.scrollTop);
+      }
+    }}
     className={cn(
       "flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200",
       active 
@@ -54,6 +57,30 @@ const SidebarItem = ({ icon: Icon, label, href, active }: SidebarItemProps) => (
 const ManagementLayout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
   const [isMobileOpen, setIsMobileOpen] = React.useState(false);
+  const sidebarNavRef = useRef<HTMLElement>(null);
+  const savedScrollTop = useRef(0);
+
+  useEffect(() => {
+    const el = sidebarNavRef.current;
+    const top = savedScrollTop.current;
+    if (!el || top <= 0) return;
+    const restore = () => {
+      el.scrollTop = top;
+    };
+    requestAnimationFrame(restore);
+    const t0 = setTimeout(restore, 0);
+    const t1 = setTimeout(restore, 50);
+    const t2 = setTimeout(restore, 150);
+    return () => {
+      clearTimeout(t0);
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [location.pathname]);
+
+  const saveSidebarScroll = (scrollTop: number) => {
+    savedScrollTop.current = scrollTop;
+  };
 
   const groups = [
     {
@@ -76,17 +103,9 @@ const ManagementLayout = ({ children }: { children: React.ReactNode }) => {
       ]
     },
     {
-      title: "Logistics & Stock",
-      items: [
-        { icon: Package, label: "Warehouse", href: "/management/inventory" },
-        { icon: Receipt, label: "Sourcing (PO)", href: "/management/purchases" },
-      ]
-    },
-    {
       title: "Financial Vault",
       items: [
         { icon: Banknote, label: "Expenses", href: "/management/expenses" },
-        { icon: Wallet, label: "Master Ledger", href: "/management/financials" },
         { icon: FileText, label: "Billing Vault", href: "/management/invoices" },
         { icon: Upload, label: "Import Wizard", href: "/management/import" },
       ]
@@ -94,13 +113,12 @@ const ManagementLayout = ({ children }: { children: React.ReactNode }) => {
     {
       title: "Administration",
       items: [
-        { icon: Briefcase, label: "Human Resources", href: "/management/hrm" },
         { icon: ShieldCheck, label: "Control Center", href: "/management/settings" },
       ]
     }
   ];
 
-  const SidebarContent = () => (
+  const SidebarContent = ({ passNavRef = false }: { passNavRef?: boolean }) => (
     <>
       <div className="w-full p-4 flex items-center justify-center border-b border-slate-100">
         <Link to="/" className="block w-full" aria-label="DTX Home">
@@ -108,7 +126,11 @@ const ManagementLayout = ({ children }: { children: React.ReactNode }) => {
         </Link>
       </div>
 
-      <nav className="flex-1 px-4 py-4 space-y-8 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:none]">
+      <nav
+        ref={passNavRef ? sidebarNavRef : undefined}
+        className="flex-1 px-4 py-4 space-y-8 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:none] overflow-x-hidden min-h-0"
+        style={{ overflowAnchor: "none" }}
+      >
         {groups.map((group, idx) => (
           <div key={idx} className="space-y-2">
             <h5 className="px-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-4">{group.title}</h5>
@@ -117,7 +139,8 @@ const ManagementLayout = ({ children }: { children: React.ReactNode }) => {
                 <SidebarItem 
                   key={item.href} 
                   {...item} 
-                  active={location.pathname === item.href} 
+                  active={location.pathname === item.href}
+                  onBeforeNavigate={passNavRef ? saveSidebarScroll : undefined}
                 />
               ))}
             </div>
@@ -138,7 +161,7 @@ const ManagementLayout = ({ children }: { children: React.ReactNode }) => {
     <div className="flex min-h-screen bg-slate-50">
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex w-64 bg-white border-r border-slate-200 flex-col fixed inset-y-0 z-50 shadow-sm">
-        <SidebarContent />
+        <SidebarContent passNavRef />
       </aside>
 
       {/* Main Content */}
