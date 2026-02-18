@@ -21,17 +21,19 @@ const DesignLibrary = () => {
   const [editing, setEditing] = useState<PresetDesign | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [form, setForm] = useState<{ name: string; description: string; basePricePerUnit: number; imageUrl: string }>({
+  const [form, setForm] = useState<{ name: string; description: string; basePricePerUnit: number; imageUrl: string; solePropertyClientId: string; solePropertyClientName: string }>({
     name: "",
     description: "",
     basePricePerUnit: 0,
     imageUrl: "",
+    solePropertyClientId: "",
+    solePropertyClientName: "",
   });
 
   const refresh = () => setPresets(ordersApi.getPresetDesigns());
 
   const openCreate = () => {
-    setForm({ name: "", description: "", basePricePerUnit: 0, imageUrl: "" });
+    setForm({ name: "", description: "", basePricePerUnit: 0, imageUrl: "", solePropertyClientId: "", solePropertyClientName: "" });
     setIsCreateOpen(true);
     setEditing(null);
     fileInputRef.current && (fileInputRef.current.value = "");
@@ -43,6 +45,8 @@ const DesignLibrary = () => {
       description: p.description ?? "",
       basePricePerUnit: p.basePricePerUnit,
       imageUrl: typeof p.imageUrl === "string" ? p.imageUrl : "",
+      solePropertyClientId: p.solePropertyClientId ?? "",
+      solePropertyClientName: p.solePropertyClientName ?? "",
     });
     setEditing(p);
     setIsCreateOpen(false);
@@ -61,6 +65,8 @@ const DesignLibrary = () => {
         description: form.description,
         basePricePerUnit: form.basePricePerUnit,
         imageUrl: form.imageUrl || undefined,
+        solePropertyClientId: form.solePropertyClientId || undefined,
+        solePropertyClientName: form.solePropertyClientName || undefined,
       });
     } else if (isCreateOpen) {
       if (!form.name) return;
@@ -69,6 +75,8 @@ const DesignLibrary = () => {
         description: form.description,
         basePricePerUnit: form.basePricePerUnit,
         imageUrl: form.imageUrl || "/placeholder-design.png",
+        ...(form.solePropertyClientId && { solePropertyClientId: form.solePropertyClientId }),
+        ...(form.solePropertyClientName && { solePropertyClientName: form.solePropertyClientName }),
       });
     }
     refresh();
@@ -131,6 +139,9 @@ const DesignLibrary = () => {
               <div className="p-4">
                 <h3 className="font-black text-slate-900 uppercase tracking-tight">{p.name}</h3>
                 {p.description && <p className="text-xs text-slate-500 mt-1">{p.description}</p>}
+                {(p.solePropertyClientName || p.solePropertyClientId) && (
+                  <p className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded mt-2 inline-block">Sole property: {p.solePropertyClientName || p.solePropertyClientId}</p>
+                )}
                 <p className="text-sm font-bold text-primary mt-2">{p.basePricePerUnit} EGP/unit</p>
               </div>
             </div>
@@ -223,6 +234,22 @@ const DesignLibrary = () => {
                   </div>
                 )}
               </div>
+            </div>
+            <div className="border-t border-slate-100 pt-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Admin: Sold to client (sole property)</p>
+              <p className="text-xs text-slate-500 mb-2">When set, this design is the sole property of the named client.</p>
+              <input
+                className="w-full mt-1 px-4 py-3 rounded-xl border border-slate-200 text-sm font-medium"
+                value={form.solePropertyClientId}
+                onChange={(e) => setForm((f) => ({ ...f, solePropertyClientId: e.target.value }))}
+                placeholder="Client ID (optional)"
+              />
+              <input
+                className="w-full mt-2 px-4 py-3 rounded-xl border border-slate-200 text-sm font-medium"
+                value={form.solePropertyClientName}
+                onChange={(e) => setForm((f) => ({ ...f, solePropertyClientName: e.target.value }))}
+                placeholder="Client name (optional)"
+              />
             </div>
           </div>
           <SheetFooter className="flex gap-2">

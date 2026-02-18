@@ -22,6 +22,9 @@ export interface PresetDesign {
   description: string;
   imageUrl: string;
   basePricePerUnit: number;
+  /** Admin-only: when set, this design is sold to the named client as their sole property */
+  solePropertyClientId?: string;
+  solePropertyClientName?: string;
 }
 
 export interface FactoryFabric {

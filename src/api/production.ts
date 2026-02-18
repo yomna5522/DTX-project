@@ -123,6 +123,30 @@ export const productionApi = {
     return true;
   },
 
+  /** Get or create a customer entity for web orders (used when adding approved orders to production sheet). */
+  getOrCreateWebOrderCustomerEntity(): string {
+    const list = getCustomers();
+    const existing = list.find((c) => c.displayName === "Web orders" || c.id === "cust-web-orders");
+    if (existing) return existing.id;
+    const now = new Date().toISOString();
+    const entity: CustomerEntity = {
+      id: "cust-web-orders",
+      displayName: "Web orders",
+      aliases: [],
+      notes: "Orders from the customer-facing shop",
+      createdAt: now,
+      updatedAt: now,
+    };
+    list.push(entity);
+    save(CUSTOMERS_KEY, list);
+    return entity.id;
+  },
+
+  /** If a run with this sourceOrderId already exists, return its id; otherwise return undefined. */
+  getRunBySourceOrderId(sourceOrderId: string): ProductionRun | undefined {
+    return getRuns().find((r) => r.sourceOrderId === sourceOrderId);
+  },
+
   // ── Pricing Rules ────────────────────────────────────────
   getAllPricingRules(): PricingRule[] {
     return getPricingRules();

@@ -70,8 +70,10 @@ export function buildFactoryNotificationEmail(payload: {
     .filter(Boolean)
     .join("\n");
 
+  const adminEmail = import.meta.env.VITE_ADMIN_EMAIL as string | undefined;
   const json = {
     subject,
+    toEmail: adminEmail ?? undefined,
     customerName,
     customerEmail,
     orderId: order.id,

@@ -224,7 +224,7 @@ const ProductionForge = () => {
               </span>
             </h1>
             <p className="text-slate-400 text-sm font-medium italic">
-              Daily sublimation print runs — log, approve, and track billing status.
+              Digital production sheet — daily print runs, log and approve. Approved shop orders are added here automatically.
             </p>
           </div>
 

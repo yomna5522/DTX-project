@@ -108,24 +108,72 @@ const ImportWizard = () => {
     setMapping(autoMap as Record<TargetKey, string>);
   }, []);
 
+  const MAX_EXCEL_MB = 50;
+  const [fileTooLarge, setFileTooLarge] = useState(false);
+  const [googleLink, setGoogleLink] = useState("");
+  const [loadingFromLink, setLoadingFromLink] = useState(false);
+  const [linkError, setLinkError] = useState("");
+
   // ── Step 1: Upload ──────────────────────────────────────
+  const processArrayBuffer = useCallback((data: ArrayBuffer, name: string) => {
+    setFileTooLarge(false);
+    setFileName(name);
+    const wb = XLSX.read(new Uint8Array(data), { type: "array" });
+    setWorkbook(wb);
+    setSheetNames(wb.SheetNames);
+    if (wb.SheetNames.length === 1) {
+      selectSheet(wb, wb.SheetNames[0]);
+      setStep("map");
+    } else {
+      setStep("sheet");
+    }
+  }, []);
+
   const handleFile = useCallback((file: File) => {
-    setFileName(file.name);
+    const sizeMB = file.size / (1024 * 1024);
+    if (sizeMB > MAX_EXCEL_MB) {
+      setFileTooLarge(true);
+      setGoogleLink("");
+      setLinkError("");
+      setFileName(file.name);
+      setWorkbook(null);
+      return;
+    }
+    setFileTooLarge(false);
     const reader = new FileReader();
     reader.onload = (e) => {
-      const data = new Uint8Array(e.target?.result as ArrayBuffer);
-      const wb = XLSX.read(data, { type: "array" });
-      setWorkbook(wb);
-      setSheetNames(wb.SheetNames);
-      if (wb.SheetNames.length === 1) {
-        selectSheet(wb, wb.SheetNames[0]);
-        setStep("map");
-      } else {
-        setStep("sheet");
-      }
+      const data = e.target?.result as ArrayBuffer;
+      if (data) processArrayBuffer(data, file.name);
     };
     reader.readAsArrayBuffer(file);
-  }, []);
+  }, [processArrayBuffer]);
+
+  const handleLoadFromLink = useCallback(async () => {
+    const url = googleLink.trim();
+    if (!url) {
+      setLinkError("Please enter a Google Drive or direct download link.");
+      return;
+    }
+    setLinkError("");
+    setLoadingFromLink(true);
+    try {
+      const res = await fetch(url, { mode: "cors" });
+      if (!res.ok) throw new Error("Could not load file from link.");
+      const data = await res.arrayBuffer();
+      const sizeMB = data.byteLength / (1024 * 1024);
+      if (sizeMB > MAX_EXCEL_MB) {
+        setLinkError(`File from link is over ${MAX_EXCEL_MB} MB. Please use a smaller file or a direct download link.`);
+        setLoadingFromLink(false);
+        return;
+      }
+      const name = res.headers.get("content-disposition")?.match(/filename="?([^"]+)"?/)?.[1] ?? "import.xlsx";
+      processArrayBuffer(data, name);
+    } catch (e) {
+      setLinkError("Could not load file from this link. Try downloading from Google Drive and re-uploading a file under 50 MB, or use a direct download link.");
+    } finally {
+      setLoadingFromLink(false);
+    }
+  }, [googleLink, processArrayBuffer]);
 
   const selectSheet = (wb: XLSX.WorkBook, name: string) => {
     setSelectedSheet(name);
@@ -283,30 +331,64 @@ const ImportWizard = () => {
 
         {/* ── STEP: UPLOAD ───────────────────────────────── */}
         {step === "upload" && (
-          <div
-            className="bg-white rounded-[40px] border-2 border-dashed border-slate-200 p-16 flex flex-col items-center justify-center hover:border-primary/40 transition-all cursor-pointer"
-            onDrop={handleDrop}
-            onDragOver={(e) => e.preventDefault()}
-            onClick={() => {
-              const inp = document.createElement("input");
-              inp.type = "file";
-              inp.accept = ".xlsx,.xls,.csv";
-              inp.onchange = (e) => {
-                const f = (e.target as HTMLInputElement).files?.[0];
-                if (f) handleFile(f);
-              };
-              inp.click();
-            }}
-          >
-            <div className="w-24 h-24 bg-primary/5 rounded-3xl flex items-center justify-center mb-6">
-              <Upload size={40} className="text-primary" />
+          <div className="space-y-6">
+            <div
+              className="bg-white rounded-[40px] border-2 border-dashed border-slate-200 p-16 flex flex-col items-center justify-center hover:border-primary/40 transition-all cursor-pointer"
+              onDrop={handleDrop}
+              onDragOver={(e) => e.preventDefault()}
+              onClick={() => {
+                const inp = document.createElement("input");
+                inp.type = "file";
+                inp.accept = ".xlsx,.xls,.csv";
+                inp.onchange = (e) => {
+                  const f = (e.target as HTMLInputElement).files?.[0];
+                  if (f) handleFile(f);
+                };
+                inp.click();
+              }}
+            >
+              <div className="w-24 h-24 bg-primary/5 rounded-3xl flex items-center justify-center mb-6">
+                <Upload size={40} className="text-primary" />
+              </div>
+              <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter mb-2">
+                Drop your Excel file here
+              </h3>
+              <p className="text-sm text-slate-400 font-medium">
+                Supports .xlsx, .xls, .csv — max {MAX_EXCEL_MB} MB. Larger files: use Google link below.
+              </p>
             </div>
-            <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter mb-2">
-              Drop your Excel file here
-            </h3>
-            <p className="text-sm text-slate-400 font-medium">
-              Supports .xlsx, .xls, .csv — up to 10k rows.
-            </p>
+            {fileTooLarge && (
+              <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-6 space-y-4">
+                <p className="text-amber-900 font-bold">
+                  File exceeds {MAX_EXCEL_MB} MB. Please provide a Google Drive (or direct download) link.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <input
+                    type="url"
+                    value={googleLink}
+                    onChange={(e) => { setGoogleLink(e.target.value); setLinkError(""); }}
+                    placeholder="https://drive.google.com/... or direct download link"
+                    className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleLoadFromLink}
+                    disabled={loadingFromLink}
+                    className="px-6 py-3 rounded-xl bg-primary text-white font-bold text-sm uppercase tracking-wider disabled:opacity-50"
+                  >
+                    {loadingFromLink ? "Loading…" : "Load from link"}
+                  </button>
+                </div>
+                {linkError && <p className="text-red-600 text-sm font-medium">{linkError}</p>}
+                <button
+                  type="button"
+                  onClick={() => { setFileTooLarge(false); setFileName(""); setGoogleLink(""); setLinkError(""); }}
+                  className="text-sm font-bold text-slate-500 hover:text-slate-700"
+                >
+                  ← Upload a different file (under {MAX_EXCEL_MB} MB)
+                </button>
+              </div>
+            )}
           </div>
         )}
 

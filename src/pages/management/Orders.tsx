@@ -35,6 +35,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ordersApi } from "@/api/orders";
+import { productionApi } from "@/api/production";
 import { authApi } from "@/api/auth";
 import { userDesignsApi } from "@/api/userDesigns";
 import type { Order as ApiOrder, OrderStatus as ApiOrderStatus } from "@/types/order";
@@ -250,8 +251,40 @@ const Orders = () => {
     }
   };
 
+  const addOrderToProductionSheet = (order: ApiOrder) => {
+    if (productionApi.getRunBySourceOrderId(order.id)) return;
+    const item = order.items?.[0];
+    if (!item) return;
+    const designSource = item.designChoice?.source;
+    let designRef = "Unknown";
+    if (designSource === "existing" && item.designChoice?.presetId) {
+      designRef = ordersApi.getPresetById(item.designChoice.presetId)?.name ?? item.designChoice.presetId;
+    } else if (designSource === "upload") designRef = "Upload";
+    else if (designSource === "my_library") designRef = item.myLibraryDesignSnapshot?.name ?? "My Library";
+    else if (designSource === "repeat") designRef = "Repeat";
+    const fabricName = item.fabricChoice?.factoryFabricId
+      ? ordersApi.getFactoryFabricById(item.fabricChoice.factoryFabricId)?.name ?? "Factory"
+      : "Customer provides";
+    const today = new Date().toISOString().slice(0, 10);
+    const machine = productionApi.getMachines()[0] ?? "Default";
+    productionApi.addRun({
+      date: today,
+      machine,
+      customerEntityId: productionApi.getOrCreateWebOrderCustomerEntity(),
+      designRef,
+      fabric: fabricName,
+      metersPrinted: item.quantity ?? 0,
+      notes: item.notes ?? "",
+      sourceOrderId: order.id,
+    });
+  };
+
   const handleStatusChange = (orderId: string, newStatus: ApiOrderStatus) => {
+    const order = ordersApi.getOrderById(orderId);
     ordersApi.updateOrderStatus(orderId, newStatus);
+    if (order && (newStatus === "PAID" || newStatus === "IN_PRODUCTION")) {
+      addOrderToProductionSheet({ ...order, status: newStatus, updatedAt: new Date().toISOString() });
+    }
     setRefresh((r) => r + 1);
     setSelectedOrder((prev) => {
       if (!prev || prev.id !== orderId) return prev;
@@ -275,6 +308,18 @@ const Orders = () => {
   const handleSaveEdit = () => {
     if (!selectedOrder) return;
     ordersApi.updateOrder(selectedOrder.id, { status: editStatus, quantity: editQuantity, notes: editNotes });
+    if (editStatus === "PAID" || editStatus === "IN_PRODUCTION") {
+      const updatedOrder: ApiOrder = {
+        ...selectedOrder,
+        status: editStatus,
+        updatedAt: new Date().toISOString(),
+        items: selectedOrder.items?.[0]
+          ? [{ ...selectedOrder.items[0], quantity: editQuantity, notes: editNotes, totalPrice: selectedOrder.items[0].unitPrice * editQuantity }]
+          : selectedOrder.items,
+      };
+      if (updatedOrder.items?.[0]) updatedOrder.totalAmount = updatedOrder.items[0].totalPrice;
+      addOrderToProductionSheet(updatedOrder);
+    }
     setRefresh((r) => r + 1);
     setSelectedOrder((prev) => {
       if (!prev || prev.id !== selectedOrder.id) return prev;
