@@ -116,6 +116,13 @@ export const ordersApi = {
     return getPresets();
   },
 
+  /** Presets visible in the shop: public (no sole owner) + private designs assigned to this customer. */
+  getPresetDesignsForCustomer(customerUserId: string | undefined): PresetDesign[] {
+    return getPresets().filter(
+      (p) => !p.solePropertyClientId || p.solePropertyClientId === customerUserId
+    );
+  },
+
   getPresetById(id: string): PresetDesign | undefined {
     return getPresets().find((p) => p.id === id);
   },

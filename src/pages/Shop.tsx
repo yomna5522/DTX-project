@@ -55,7 +55,10 @@ const Shop = () => {
   const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
   const [submitError, setSubmitError] = useState("");
 
-  const presets = useMemo(() => ordersApi.getPresetDesigns(), []);
+  const presets = useMemo(
+    () => ordersApi.getPresetDesignsForCustomer(user?.id),
+    [user?.id]
+  );
   const userOrders = useMemo(() => (user ? ordersApi.getOrdersByUserId(user.id) : []), [user]);
   const myLibraryDesigns = useMemo(() => (user ? userDesignsApi.getDesignsByUserId(user.id) : []), [user]);
   const factoryFabrics = useMemo(() => ordersApi.getFactoryFabrics(), []);

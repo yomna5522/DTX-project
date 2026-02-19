@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import ManagementLayout from "@/components/management/ManagementLayout";
 import {
   Plus,
@@ -8,6 +9,7 @@ import {
   FileText,
   Printer,
   Trash2,
+  Receipt,
   Pencil,
   X,
   ChevronDown,
@@ -17,6 +19,9 @@ import {
   ArrowRight,
   Calendar,
   Layers,
+  Table2,
+  Download,
+  List,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -53,8 +58,39 @@ const statusLabels: Record<ProductionBillingStatus, string> = {
   INVOICED: "Invoiced",
 };
 
+const SHEET_COLUMNS: { key: keyof ProductionRun | "customerName"; defaultLabel: string }[] = [
+  { key: "date", defaultLabel: "Date" },
+  { key: "machine", defaultLabel: "Machine" },
+  { key: "customerName", defaultLabel: "Customer" },
+  { key: "designRef", defaultLabel: "Design Ref" },
+  { key: "fabric", defaultLabel: "Fabric" },
+  { key: "metersPrinted", defaultLabel: "Meters" },
+  { key: "quantity", defaultLabel: "Quantity" },
+  { key: "notes", defaultLabel: "Notes" },
+  { key: "sourceOrderId", defaultLabel: "Order ID" },
+  { key: "billingStatus", defaultLabel: "Status" },
+];
+
+const SHEET_COLUMNS_STORAGE_KEY = "dtx_production_sheet_columns";
+
+function loadSheetColumnLabels(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(SHEET_COLUMNS_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
+
+function saveSheetColumnLabels(labels: Record<string, string>) {
+  localStorage.setItem(SHEET_COLUMNS_STORAGE_KEY, JSON.stringify(labels));
+}
+
 const ProductionForge = () => {
+  const navigate = useNavigate();
   const [refresh, setRefresh] = useState(0);
+  const [viewMode, setViewMode] = useState<"log" | "sheet">("sheet");
+  const [sheetColumnLabels, setSheetColumnLabels] = useState<Record<string, string>>(() => loadSheetColumnLabels());
+  const [editingCell, setEditingCell] = useState<{ runId: string; key: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
   const [customerFilter, setCustomerFilter] = useState("");
@@ -211,6 +247,68 @@ const ProductionForge = () => {
   const custName = (id: string) =>
     customers.find((c) => c.id === id)?.displayName ?? id;
 
+  const getSheetColumnLabel = (key: string) =>
+    sheetColumnLabels[key] ?? SHEET_COLUMNS.find((c) => c.key === key)?.defaultLabel ?? key;
+
+  const setSheetColumnLabel = (key: string, label: string) => {
+    const next = { ...sheetColumnLabels, [key]: label };
+    setSheetColumnLabels(next);
+    saveSheetColumnLabels(next);
+  };
+
+  const getRunCellValue = (run: ProductionRun, key: string): string | number => {
+    if (key === "customerName") return custName(run.customerEntityId);
+    const v = run[key as keyof ProductionRun];
+    if (v === undefined || v === null) return "";
+    return v as string | number;
+  };
+
+  const handleSheetCellSave = (runId: string, key: string, value: string) => {
+    if (key === "customerName") return;
+    const run = allRuns.find((r) => r.id === runId);
+    if (!run) return;
+    const updates: Partial<ProductionRun> = {};
+    if (key === "date") updates.date = value;
+    else if (key === "machine") updates.machine = value;
+    else if (key === "designRef") updates.designRef = value;
+    else if (key === "fabric") updates.fabric = value;
+    else if (key === "metersPrinted") updates.metersPrinted = parseFloat(value) || 0;
+    else if (key === "quantity") updates.quantity = value === "" ? undefined : parseFloat(value) || 0;
+    else if (key === "notes") updates.notes = value;
+    else if (key === "sourceOrderId") updates.sourceOrderId = value || undefined;
+    else if (key === "billingStatus") {
+      const v = value.toUpperCase().replace(/\s/g, "");
+      if (v === "DRAFT" || v === "APPROVED" || v === "INVOICED") updates.billingStatus = v;
+    }
+    if (Object.keys(updates).length > 0) {
+      productionApi.updateRun(runId, updates);
+      setRefresh((r) => r + 1);
+    }
+    setEditingCell(null);
+  };
+
+  const exportSheetToCsv = () => {
+    const headers = ["#", ...SHEET_COLUMNS.map((c) => getSheetColumnLabel(c.key))];
+    const rows = filteredRuns.map((run, i) => {
+      const row = [
+        String(i + 1),
+        ...SHEET_COLUMNS.map((c) => {
+          const val = getRunCellValue(run, c.key);
+          const str = String(val ?? "");
+          return str.includes(",") || str.includes('"') || str.includes("\n") ? `"${str.replace(/"/g, '""')}"` : str;
+        }),
+      ];
+      return row.join(",");
+    });
+    const csv = [headers.join(","), ...rows].join("\r\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `production-sheet-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   return (
     <ManagementLayout>
       <div className="space-y-8 animate-fade-in-up">
@@ -228,8 +326,30 @@ const ProductionForge = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-3 w-full lg:w-auto">
-            <div className="relative flex-1 lg:w-72">
+          <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+            <div className="flex rounded-xl border border-slate-200 overflow-hidden bg-white p-0.5">
+              <button
+                type="button"
+                onClick={() => setViewMode("log")}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2.5 text-xs font-bold uppercase tracking-widest transition-all",
+                  viewMode === "log" ? "bg-primary text-white rounded-lg shadow" : "text-slate-500 hover:bg-slate-50"
+                )}
+              >
+                <List size={16} /> Log
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("sheet")}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2.5 text-xs font-bold uppercase tracking-widest transition-all",
+                  viewMode === "sheet" ? "bg-primary text-white rounded-lg shadow" : "text-slate-500 hover:bg-slate-50"
+                )}
+              >
+                <Table2 size={16} /> Sheet
+              </button>
+            </div>
+            <div className="relative flex-1 lg:w-72 min-w-[200px]">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
               <input
                 type="text"
@@ -239,6 +359,15 @@ const ProductionForge = () => {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
+            {viewMode === "sheet" && filteredRuns.length > 0 && (
+              <button
+                type="button"
+                onClick={exportSheetToCsv}
+                className="flex items-center gap-2 p-4 lg:px-6 rounded-[22px] border-2 border-emerald-200 text-emerald-700 font-black text-xs tracking-widest hover:bg-emerald-50 transition-all"
+              >
+                <Download size={18} /> Export CSV
+              </button>
+            )}
             <button
               onClick={openAdd}
               className="bg-primary text-white p-4 lg:px-8 rounded-[22px] font-black text-xs tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 uppercase whitespace-nowrap"
@@ -365,9 +494,9 @@ const ProductionForge = () => {
           />
         </div>
 
-        {/* Bulk actions */}
+        {/* Bulk actions (Log and Sheet) */}
         {selectedIds.size > 0 && (
-          <div className="flex items-center gap-4 bg-amber-50 p-4 rounded-2xl border border-amber-100">
+          <div className="flex flex-wrap items-center gap-4 bg-amber-50 p-4 rounded-2xl border border-amber-100">
             <span className="text-sm font-black text-amber-700">
               {selectedIds.size} run(s) selected
             </span>
@@ -378,6 +507,12 @@ const ProductionForge = () => {
               <CheckCircle2 size={16} /> Approve for Billing
             </button>
             <button
+              onClick={() => navigate("/management/invoices")}
+              className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:opacity-90 flex items-center gap-2"
+            >
+              <Receipt size={16} /> Make Billing
+            </button>
+            <button
               onClick={() => setSelectedIds(new Set())}
               className="px-4 py-2.5 bg-white border border-amber-200 text-amber-700 rounded-xl text-xs font-black uppercase hover:bg-amber-100"
             >
@@ -386,7 +521,122 @@ const ProductionForge = () => {
           </div>
         )}
 
-        {/* Table */}
+        {/* ── Sheet view (Excel-like) ───────────────────────────────── */}
+        {viewMode === "sheet" && (
+          <div className="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-hidden min-h-[400px]">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse" style={{ minWidth: "920px" }}>
+                <thead>
+                  <tr className="bg-slate-100 border-b-2 border-slate-300">
+                    <th className="border border-slate-300 px-2 py-2 text-center w-10">
+                      <button
+                        type="button"
+                        onClick={toggleSelectAll}
+                        className="text-slate-400 hover:text-primary"
+                        title="Select all draft runs"
+                      >
+                        {filteredRuns.filter((r) => r.billingStatus === "DRAFT").length > 0 &&
+                        filteredRuns
+                          .filter((r) => r.billingStatus === "DRAFT")
+                          .every((r) => selectedIds.has(r.id)) ? (
+                          <CheckSquare size={18} className="text-primary" />
+                        ) : (
+                          <Square size={18} />
+                        )}
+                      </button>
+                    </th>
+                    <th className="border border-slate-300 px-2 py-2 text-center text-xs font-black text-slate-600 w-12">
+                      #
+                    </th>
+                    {SHEET_COLUMNS.map((col) => (
+                      <th key={col.key} className="border border-slate-300 px-2 py-1.5 min-w-[90px]">
+                        <input
+                          type="text"
+                          value={getSheetColumnLabel(col.key)}
+                          onChange={(e) => setSheetColumnLabel(col.key, e.target.value)}
+                          className="w-full bg-transparent text-xs font-black text-slate-700 uppercase tracking-wider border-0 border-b border-transparent hover:border-slate-400 focus:border-primary focus:outline-none focus:ring-0 px-1 py-0.5"
+                          title="Edit column name"
+                        />
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRuns.map((run, idx) => (
+                    <tr key={run.id} className="hover:bg-slate-50/80 border-b border-slate-200">
+                      <td className="border border-slate-200 px-2 py-1.5 text-center w-10">
+                        {run.billingStatus === "DRAFT" ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleSelect(run.id)}
+                            className="text-slate-400 hover:text-primary"
+                          >
+                            {selectedIds.has(run.id) ? (
+                              <CheckSquare size={18} className="text-primary" />
+                            ) : (
+                              <Square size={18} />
+                            )}
+                          </button>
+                        ) : (
+                          <span className="text-slate-200 inline-block">
+                            <CheckCircle2 size={18} />
+                          </span>
+                        )}
+                      </td>
+                      <td className="border border-slate-200 px-2 py-1.5 text-center text-xs font-bold text-slate-500 bg-slate-50">
+                        {idx + 1}
+                      </td>
+                      {SHEET_COLUMNS.map((col) => {
+                        const isEditing = editingCell?.runId === run.id && editingCell?.key === col.key;
+                        const isReadOnly = col.key === "customerName";
+                        const val = getRunCellValue(run, col.key);
+                        const displayVal = col.key === "billingStatus" ? statusLabels[(val as ProductionBillingStatus) ?? "DRAFT"] : val;
+                        return (
+                          <td key={col.key} className="border border-slate-200 p-0">
+                            {isEditing && !isReadOnly ? (
+                              <input
+                                autoFocus
+                                type={col.key === "metersPrinted" || col.key === "quantity" ? "number" : "text"}
+                                defaultValue={String(val ?? "")}
+                                onBlur={(e) => handleSheetCellSave(run.id, col.key, e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.currentTarget.blur();
+                                  }
+                                  if (e.key === "Escape") setEditingCell(null);
+                                }}
+                                className="w-full min-w-[80px] px-2 py-1.5 text-xs font-medium border-0 border-b-2 border-primary focus:outline-none focus:ring-0"
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => !isReadOnly && setEditingCell({ runId: run.id, key: col.key })}
+                                className={cn(
+                                  "w-full min-w-[80px] text-left px-2 py-1.5 text-xs font-medium border-0 rounded-none",
+                                  !isReadOnly && "hover:bg-primary/5 cursor-text"
+                                )}
+                              >
+                                {String(displayVal ?? "")}
+                              </button>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {filteredRuns.length === 0 && (
+              <div className="p-24 text-center text-slate-400 text-sm font-bold">
+                No runs in sheet. Add runs from Log view or they will appear here when orders are approved.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Log view (table) ──────────────────────────────────────── */}
+        {viewMode === "log" && (
         <div className="bg-white rounded-[45px] border border-slate-100 shadow-sm overflow-hidden min-h-[400px]">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -525,6 +775,8 @@ const ProductionForge = () => {
             </div>
           )}
         </div>
+        )}
+
       </div>
 
       {/* ── Add / Edit sheet ────────────────────────────────── */}

@@ -4,6 +4,8 @@ import type {
   CustomerEntity,
   PricingRule,
 } from "@/types/production";
+import type { Order } from "@/types/order";
+import { ordersApi } from "@/api/orders";
 
 // ─── Storage keys ────────────────────────────────────────────
 const RUNS_KEY = "dtx_production_runs";
@@ -145,6 +147,35 @@ export const productionApi = {
   /** If a run with this sourceOrderId already exists, return its id; otherwise return undefined. */
   getRunBySourceOrderId(sourceOrderId: string): ProductionRun | undefined {
     return getRuns().find((r) => r.sourceOrderId === sourceOrderId);
+  },
+
+  /** Create a production run from a shop order (customer or quotation). Called when any order is created so it appears in the sheet. */
+  addRunFromOrder(order: Order): void {
+    if (this.getRunBySourceOrderId(order.id)) return;
+    const item = order.items?.[0];
+    if (!item) return;
+    const designSource = item.designChoice?.source;
+    let designRef = "Unknown";
+    if (designSource === "existing" && item.designChoice?.presetId) {
+      designRef = ordersApi.getPresetById(item.designChoice.presetId)?.name ?? item.designChoice.presetId;
+    } else if (designSource === "upload") designRef = "Upload";
+    else if (designSource === "my_library") designRef = item.myLibraryDesignSnapshot?.name ?? "My Library";
+    else if (designSource === "repeat") designRef = "Repeat";
+    const fabricName = item.fabricChoice?.factoryFabricId
+      ? ordersApi.getFactoryFabricById(item.fabricChoice.factoryFabricId)?.name ?? "Factory"
+      : "Customer provides";
+    const today = new Date().toISOString().slice(0, 10);
+    const machine = this.getMachines()[0] ?? "Default";
+    this.addRun({
+      date: today,
+      machine,
+      customerEntityId: this.getOrCreateWebOrderCustomerEntity(),
+      designRef,
+      fabric: fabricName,
+      metersPrinted: item.quantity ?? 0,
+      notes: item.notes ?? "",
+      sourceOrderId: order.id,
+    });
   },
 
   // ── Pricing Rules ────────────────────────────────────────
