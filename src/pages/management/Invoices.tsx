@@ -16,6 +16,8 @@ import {
   ArrowRight,
   Calculator,
   LayoutGrid,
+  Pencil,
+  Save,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { 
@@ -38,7 +40,8 @@ import {
 import { billingApi } from "@/api/billing";
 import { productionApi } from "@/api/production";
 import { downloadInvoicePdf } from "@/services/invoicePdf";
-import type { InvoiceDocument, InvoiceLineItem } from "@/types/billing";
+import type { InvoiceDocument, InvoiceLineItem, InvoiceDocumentStatus } from "@/types/billing";
+import logoImage from "@/assets/Logo.png";
 
 const Invoices = () => {
   const [refresh, setRefresh] = useState(0);
@@ -56,6 +59,9 @@ const Invoices = () => {
   // Preview sheet
   const [previewInvoice, setPreviewInvoice] = useState<InvoiceDocument | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editDraft, setEditDraft] = useState<InvoiceDocument | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
 
   // Delete
   const [deleteTarget, setDeleteTarget] = useState<InvoiceDocument | null>(null);
@@ -82,6 +88,7 @@ const Invoices = () => {
     return allInvoices.filter(
       (inv) =>
         inv.id.toLowerCase().includes(q) ||
+        (inv.invoiceNumber ?? "").toLowerCase().includes(q) ||
         inv.customerName.toLowerCase().includes(q) ||
         `${inv.customerName}.${inv.billNumber}`.toLowerCase().includes(q)
     );
@@ -115,8 +122,7 @@ const Invoices = () => {
       notes: createNotes || undefined,
     });
     setIsCreateOpen(false);
-    setPreviewInvoice(inv);
-    setIsPreviewOpen(true);
+    openPreview(inv);
     setRefresh((r) => r + 1);
   };
 
@@ -132,11 +138,138 @@ const Invoices = () => {
     setRefresh((r) => r + 1);
     if (previewInvoice?.id === inv.id) {
       setPreviewInvoice({ ...inv, status: "PAID" });
+      if (editDraft?.id === inv.id) setEditDraft((d) => (d ? { ...d, status: "PAID" } : null));
+    }
+  };
+
+  const openPreview = (inv: InvoiceDocument) => {
+    setPreviewInvoice(inv);
+    setIsPreviewOpen(true);
+    setIsEditMode(false);
+    setEditDraft(null);
+    setEditError(null);
+  };
+
+  const startEdit = () => {
+    if (!previewInvoice) return;
+    setEditDraft(JSON.parse(JSON.stringify(previewInvoice)));
+    setIsEditMode(true);
+    setEditError(null);
+  };
+
+  const cancelEdit = () => {
+    setIsEditMode(false);
+    setEditDraft(null);
+    setEditError(null);
+  };
+
+  const updateEditDraft = (updates: Partial<InvoiceDocument>) => {
+    setEditDraft((d) => (d ? { ...d, ...updates } : null));
+    setEditError(null);
+  };
+
+  const updateEditLine = (lineIndex: number, updates: Partial<InvoiceLineItem>) => {
+    setEditDraft((d) => {
+      if (!d || !d.lines[lineIndex]) return d;
+      const lines = [...d.lines];
+      lines[lineIndex] = { ...lines[lineIndex], ...updates };
+      return { ...d, lines };
+    });
+    setEditError(null);
+  };
+
+  const addEditLine = () => {
+    setEditDraft((d) => {
+      if (!d) return d;
+      return {
+        ...d,
+        lines: [
+          ...d.lines,
+          {
+            designRef: "",
+            fabric: "",
+            totalMeters: 0,
+            pricePerMeter: 0,
+            lineTotal: 0,
+            productionRunIds: [],
+          },
+        ],
+      };
+    });
+  };
+
+  const removeEditLine = (lineIndex: number) => {
+    setEditDraft((d) => {
+      if (!d || d.lines.length <= 1) return d;
+      const lines = d.lines.filter((_, i) => i !== lineIndex);
+      return { ...d, lines };
+    });
+  };
+
+  const handleSaveEdit = () => {
+    if (!editDraft || !previewInvoice) return;
+    setEditError(null);
+    if (!editDraft.customerName?.trim()) {
+      setEditError("Customer name is required.");
+      return;
+    }
+    if (!editDraft.periodStart || !editDraft.periodEnd) {
+      setEditError("Period start and end are required.");
+      return;
+    }
+    if (editDraft.lines.some((l) => !String(l.designRef).trim() || !String(l.fabric).trim())) {
+      setEditError("Each line must have design and fabric.");
+      return;
+    }
+    const invoiceNumberTrimmed = (editDraft.invoiceNumber ?? "").trim();
+    if (!invoiceNumberTrimmed) {
+      setEditError("Invoice number is required.");
+      return;
+    }
+    const result = billingApi.updateInvoice(previewInvoice.id, {
+      invoiceNumber: invoiceNumberTrimmed,
+      customerEntityId: editDraft.customerEntityId,
+      customerName: editDraft.customerName.trim(),
+      billNumber: editDraft.billNumber,
+      periodStart: editDraft.periodStart,
+      periodEnd: editDraft.periodEnd,
+      lines: editDraft.lines.map((l) => ({
+        ...l,
+        designRef: String(l.designRef).trim(),
+        fabric: String(l.fabric).trim(),
+        totalMeters: Number(l.totalMeters) || 0,
+        pricePerMeter: Number(l.pricePerMeter) || 0,
+      })),
+      discountPct: editDraft.discountPct,
+      vatPct: editDraft.vatPct,
+      status: editDraft.status,
+      notes: editDraft.notes?.trim() || undefined,
+      issuedAt: editDraft.issuedAt || undefined,
+    });
+    if (result.success) {
+      setPreviewInvoice(result.invoice);
+      setEditDraft(null);
+      setIsEditMode(false);
+      setRefresh((r) => r + 1);
+    } else {
+      setEditError(result.error);
     }
   };
 
   const custName = (id: string) =>
     customers.find((c) => c.id === id)?.displayName ?? id;
+
+  /** When editing, compute totals from lines + discount/vat for live preview */
+  const editModeTotals = useMemo(() => {
+    if (!isEditMode || !editDraft) return null;
+    const lines = editDraft.lines;
+    const subtotal = Math.round(lines.reduce((s, l) => s + l.totalMeters * l.pricePerMeter, 0) * 100) / 100;
+    const discountAmount = Math.round(subtotal * (editDraft.discountPct / 100) * 100) / 100;
+    const afterDiscount = Math.round((subtotal - discountAmount) * 100) / 100;
+    const vatAmount = Math.round(afterDiscount * (editDraft.vatPct / 100) * 100) / 100;
+    const total = Math.round((afterDiscount + vatAmount) * 100) / 100;
+    return { subtotal, discountAmount, afterDiscount, vatAmount, total };
+  }, [isEditMode, editDraft]);
 
   const statusColor = (status: InvoiceDocument["status"]) => {
     switch (status) {
@@ -235,7 +368,7 @@ const Invoices = () => {
               <thead>
                  <tr className="bg-slate-50">
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  Bill #
+                  Invoice #
                 </th>
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                   Customer
@@ -259,18 +392,15 @@ const Invoices = () => {
                    <tr 
                      key={inv.id} 
                   className="hover:bg-slate-50/70 transition-all group cursor-pointer"
-                     onClick={() => {
-                    setPreviewInvoice(inv);
-                        setIsPreviewOpen(true);
-                     }}
+                     onClick={() => openPreview(inv)}
                    >
                   <td className="px-8 py-6">
                          <div className="flex flex-col">
                       <span className="text-sm font-black text-slate-900 uppercase tracking-tight">
-                        {inv.customerName}.{inv.billNumber}
+                        {inv.invoiceNumber ?? `${inv.customerName}.${inv.billNumber}`}
                       </span>
-                      <span className="text-[9px] font-black text-primary uppercase mt-0.5 tracking-widest">
-                        {inv.id}
+                      <span className="text-[9px] font-black text-slate-400 uppercase mt-0.5 tracking-widest">
+                        {inv.customerName}
                       </span>
                          </div>
                       </td>
@@ -315,10 +445,7 @@ const Invoices = () => {
                         <Trash2 size={18} />
                       </button>
                       <button
-                        onClick={() => {
-                          setPreviewInvoice(inv);
-                          setIsPreviewOpen(true);
-                        }}
+                        onClick={() => openPreview(inv)}
                         className="p-3 bg-white rounded-2xl text-slate-200 border border-slate-100 group-hover:text-primary group-hover:border-primary/20 transition-all shadow-sm"
                       >
                             <ChevronRight size={18} />
@@ -577,10 +704,39 @@ const Invoices = () => {
                         <FileText size={24} className="text-primary" />
                      </div>
                   <span className="text-xs font-black uppercase tracking-[0.3em]">
-                    {previewInvoice.customerName}.{previewInvoice.billNumber} PREVIEW
+                    {(previewInvoice.invoiceNumber ?? `${previewInvoice.customerName}.${previewInvoice.billNumber}`)} PREVIEW
+                    {isEditMode && (
+                      <span className="ml-3 px-2 py-0.5 bg-amber-500/30 text-amber-200 rounded text-[10px] font-black uppercase tracking-widest">
+                        Editing
+                      </span>
+                    )}
                   </span>
                   </div>
                   <div className="flex gap-3 relative z-10">
+                    {!isEditMode ? (
+                      <button
+                        onClick={startEdit}
+                        className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all flex items-center gap-2"
+                        title="Edit invoice (admin)"
+                      >
+                        <Pencil size={18} /> Edit
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          onClick={cancelEdit}
+                          className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleSaveEdit}
+                          className="p-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl transition-all flex items-center gap-2"
+                        >
+                          <Save size={18} /> Save
+                        </button>
+                      </>
+                    )}
                   <button
                     onClick={() => downloadInvoicePdf(previewInvoice)}
                     className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all"
@@ -589,7 +745,7 @@ const Invoices = () => {
                     <Download size={20} />
                   </button>
                   <button
-                    onClick={() => setIsPreviewOpen(false)}
+                    onClick={() => { setIsPreviewOpen(false); cancelEdit(); }}
                     className="p-3 bg-rose-500/20 hover:bg-rose-500 text-white rounded-xl transition-all ml-4"
                   >
                     <X size={20} />
@@ -598,174 +754,249 @@ const Invoices = () => {
                </div>
 
                <div className="flex-1 overflow-y-auto p-12 bg-slate-100">
-                {/* Branded invoice */}
-                <div className="bg-white shadow-2xl rounded-[40px] overflow-hidden max-w-3xl mx-auto flex flex-col min-h-[900px]">
-                  {/* Header */}
-                     <div className="p-16 border-b-8 border-primary bg-slate-50 relative overflow-hidden">
-                        <div className="absolute top-0 right-0 p-10 opacity-5 grayscale pointer-events-none transform rotate-12">
-                           <LayoutGrid size={200} />
-                        </div>
-                        <div className="flex justify-between items-start relative z-10">
-                           <div className="space-y-6">
-                        <h2 className="text-4xl font-black text-slate-900 tracking-tighter italic">
-                          DTX <span className="text-primary not-italic">PRINTING</span> Center
-                        </h2>
+                {editError && isEditMode && (
+                  <div className="max-w-3xl mx-auto mb-4 rounded-2xl bg-red-50 border border-red-200 px-6 py-4 text-sm font-bold text-red-700">
+                    {editError}
+                  </div>
+                )}
+                <div className={cn(
+                  "bg-white shadow-2xl rounded-[40px] overflow-hidden max-w-3xl mx-auto flex flex-col min-h-[900px]",
+                  isEditMode && "ring-2 ring-amber-400 ring-offset-4"
+                )}>
+                  {/* Data source: when editing use editDraft, else previewInvoice */}
+                  {(() => {
+                    const inv = isEditMode && editDraft ? editDraft : previewInvoice!;
+                    const totals = isEditMode && editDraft && editModeTotals ? editModeTotals : inv;
+                    return (
+                      <>
+                        {/* Header with logo */}
+                        <div className="p-16 border-b-8 border-primary bg-slate-50 relative overflow-hidden">
+                          <div className="absolute top-0 right-0 p-10 opacity-5 grayscale pointer-events-none transform rotate-12">
+                            <LayoutGrid size={200} />
+                          </div>
+                          <div className="flex justify-between items-start relative z-10">
+                            <div className="space-y-6">
+                              <div className="flex flex-col gap-3">
+                                <img
+                                  src={logoImage}
+                                  alt="DTX Printing Center"
+                                  className="h-16 w-auto max-w-[200px] object-contain"
+                                />
+                                <h2 className="text-4xl font-black text-slate-900 tracking-tighter italic">
+                                  DTX <span className="text-primary not-italic">PRINTING</span> Center
+                                </h2>
+                              </div>
                               <div className="text-[10px] font-bold text-slate-400 flex flex-col gap-1 uppercase tracking-widest">
-                                 <span>Industrial Zone A, 4th Industrial City</span>
-                                 <span>Cairo, Egypt</span>
-                                 <span>tax id: 990-221-440</span>
+                                <span>Industrial Zone A, 4th Industrial City</span>
+                                <span>Cairo, Egypt</span>
+                                <span>tax id: 990-221-440</span>
                               </div>
-                           </div>
-                           <div className="text-right space-y-2">
-                        <h1 className="text-6xl font-black text-slate-900 uppercase tracking-tighter opacity-10">
-                          INVOICE
-                        </h1>
-                        <p className="text-xl font-black text-slate-900 uppercase tracking-widest">
-                          {previewInvoice.customerName}.{previewInvoice.billNumber}
-                        </p>
-                           </div>
-                        </div>
-                     </div>
-
-                     <div className="p-16 space-y-16 flex-1">
-                    {/* Bill To */}
-                        <div className="grid grid-cols-2 gap-20">
-                           <div className="space-y-4">
-                        <h5 className="text-[10px] font-black text-primary uppercase tracking-[0.3em] border-b border-primary/10 pb-2">
-                          Bill Recipient
-                        </h5>
-                        <p className="text-2xl font-black text-slate-900 uppercase tracking-tight leading-none">
-                          {previewInvoice.customerName}
-                        </p>
-                           </div>
-                           <div className="flex justify-end">
-                              <div className="space-y-6 text-right w-64">
-                                 <div className="grid grid-cols-2 gap-4">
-                            <div className="text-[9px] font-black text-slate-300 uppercase">
-                              Period
                             </div>
-                            <div className="text-xs font-black text-slate-900">
-                              {previewInvoice.periodStart} — {previewInvoice.periodEnd}
-                            </div>
-                                 </div>
-                                 <div className="grid grid-cols-2 gap-4">
-                            <div className="text-[9px] font-black text-slate-300 uppercase">
-                              Issued
-                            </div>
-                            <div className="text-xs font-black text-slate-900">
-                              {new Date(previewInvoice.createdAt).toLocaleDateString()}
-                            </div>
-                                 </div>
-                                 <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-50">
-                            <div className="text-[9px] font-black text-slate-300 uppercase">
-                              Status
-                            </div>
-                            <div
-                              className={cn(
-                                       "text-[10px] font-black uppercase tracking-widest",
-                                previewInvoice.status === "PAID"
-                                  ? "text-emerald-500"
-                                  : "text-blue-500"
+                            <div className="text-right space-y-2">
+                              <h1 className="text-6xl font-black text-slate-900 uppercase tracking-tighter opacity-10">INVOICE</h1>
+                              {isEditMode && editDraft ? (
+                                <input
+                                  type="text"
+                                  value={editDraft.invoiceNumber ?? ""}
+                                  onChange={(e) => updateEditDraft({ invoiceNumber: e.target.value })}
+                                  placeholder="e.g. INV-0001"
+                                  className="text-xl font-black text-slate-900 uppercase tracking-widest w-full text-right bg-transparent border-b-2 border-amber-300 focus:border-primary outline-none py-1"
+                                />
+                              ) : (
+                                <p className="text-xl font-black text-slate-900 uppercase tracking-widest">
+                                  {inv.invoiceNumber ?? `${inv.customerName}.${inv.billNumber}`}
+                                </p>
                               )}
-                            >
-                              {previewInvoice.status}
                             </div>
-                                 </div>
-                              </div>
-                           </div>
+                          </div>
                         </div>
 
-                        {/* Line Items */}
-                        <div className="space-y-6">
-                           <table className="w-full text-left">
+                        <div className="p-16 space-y-16 flex-1">
+                          {/* Bill Recipient + Period, Issued, Status */}
+                          <div className="grid grid-cols-2 gap-20">
+                            <div className="space-y-4">
+                              <h5 className="text-[10px] font-black text-primary uppercase tracking-[0.3em] border-b border-primary/10 pb-2">Bill Recipient</h5>
+                              {isEditMode && editDraft ? (
+                                <input
+                                  type="text"
+                                  value={editDraft.customerName}
+                                  onChange={(e) => updateEditDraft({ customerName: e.target.value })}
+                                  className="text-2xl font-black text-slate-900 uppercase tracking-tight w-full bg-transparent border-b-2 border-amber-300 focus:border-primary outline-none py-1"
+                                />
+                              ) : (
+                                <p className="text-2xl font-black text-slate-900 uppercase tracking-tight leading-none">{inv.customerName}</p>
+                              )}
+                            </div>
+                            <div className="flex justify-end">
+                              <div className="space-y-6 text-right w-64">
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div className="text-[9px] font-black text-slate-300 uppercase">Period</div>
+                                  <div className="text-xs font-black text-slate-900">
+                                    {isEditMode && editDraft ? (
+                                      <span className="flex flex-col gap-1">
+                                        <input type="date" value={editDraft.periodStart} onChange={(e) => updateEditDraft({ periodStart: e.target.value })} className="w-full text-right bg-transparent border-b border-slate-300 focus:border-primary outline-none py-0.5 text-slate-900 font-black" />
+                                        <input type="date" value={editDraft.periodEnd} onChange={(e) => updateEditDraft({ periodEnd: e.target.value })} className="w-full text-right bg-transparent border-b border-slate-300 focus:border-primary outline-none py-0.5 text-slate-900 font-black" />
+                                      </span>
+                                    ) : (
+                                      `${inv.periodStart} — ${inv.periodEnd}`
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div className="text-[9px] font-black text-slate-300 uppercase">Issued</div>
+                                  <div className="text-xs font-black text-slate-900">
+                                    {isEditMode && editDraft ? (
+                                      <input
+                                        type="date"
+                                        value={(editDraft.issuedAt || editDraft.createdAt).slice(0, 10)}
+                                        onChange={(e) => updateEditDraft({ issuedAt: e.target.value ? new Date(e.target.value).toISOString() : undefined })}
+                                        className="w-full text-right bg-transparent border-b border-slate-300 focus:border-primary outline-none py-0.5"
+                                      />
+                                    ) : (
+                                      new Date(inv.issuedAt || inv.createdAt).toLocaleDateString()
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-50">
+                                  <div className="text-[9px] font-black text-slate-300 uppercase">Status</div>
+                                  <div className="text-xs font-black">
+                                    {isEditMode && editDraft ? (
+                                      <select
+                                        value={editDraft.status}
+                                        onChange={(e) => updateEditDraft({ status: e.target.value as InvoiceDocumentStatus })}
+                                        className={cn("w-full text-right bg-transparent border-b border-slate-300 focus:border-primary outline-none py-0.5 font-black uppercase", editDraft.status === "PAID" ? "text-emerald-600" : "text-blue-600")}
+                                      >
+                                        <option value="DRAFT">DRAFT</option>
+                                        <option value="ISSUED">ISSUED</option>
+                                        <option value="PAID">PAID</option>
+                                        <option value="CANCELLED">CANCELLED</option>
+                                      </select>
+                                    ) : (
+                                      <span className={cn(inv.status === "PAID" ? "text-emerald-500" : "text-blue-500")}>{inv.status}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Line Items */}
+                          <div className="space-y-6">
+                            <table className="w-full text-left">
                               <thead>
-                                 <tr className="border-b-2 border-slate-900">
-                            <th className="py-4 text-[10px] font-black text-slate-900 uppercase tracking-widest">
-                              Design / Fabric
-                            </th>
-                            <th className="py-4 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center">
-                              Meters (LM)
-                            </th>
-                            <th className="py-4 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center">
-                              Rate (EGP/m)
-                            </th>
-                            <th className="py-4 text-[10px] font-black text-slate-900 uppercase tracking-widest text-right">
-                              Total
-                            </th>
-                                 </tr>
+                                <tr className="border-b-2 border-slate-900">
+                                  <th className="py-4 text-[10px] font-black text-slate-900 uppercase tracking-widest">Design / Fabric</th>
+                                  <th className="py-4 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center">Meters (LM)</th>
+                                  <th className="py-4 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center">Rate (EGP/m)</th>
+                                  <th className="py-4 text-[10px] font-black text-slate-900 uppercase tracking-widest text-right">Total</th>
+                                  {isEditMode && editDraft && <th className="w-10" />}
+                                </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
-                          {previewInvoice.lines.map((line, idx) => (
-                                   <tr key={idx}>
-                              <td className="py-6">
-                                <span className="font-black text-slate-900 uppercase tracking-tight text-sm">
-                                  {line.designRef}
-                                </span>
-                                <span className="block text-xs text-slate-500 mt-0.5">
-                                  {line.fabric}
-                                </span>
-                              </td>
-                              <td className="py-6 text-center font-bold text-slate-500">
-                                {line.totalMeters} LM
-                              </td>
-                              <td className="py-6 text-center font-bold text-slate-500">
-                                {line.pricePerMeter.toLocaleString()}
-                              </td>
-                              <td className="py-6 text-right font-black text-slate-900 text-lg tracking-tighter">
-                                {line.lineTotal.toLocaleString()} EGP
-                              </td>
-                                   </tr>
-                                 ))}
+                                {inv.lines.map((line, idx) => (
+                                  <tr key={idx}>
+                                    <td className="py-6">
+                                      {isEditMode && editDraft ? (
+                                        <div className="space-y-1">
+                                          <input type="text" value={editDraft.lines[idx]?.designRef ?? ""} onChange={(e) => updateEditLine(idx, { designRef: e.target.value })} placeholder="Design" className="block w-full font-black text-slate-900 uppercase tracking-tight text-sm bg-transparent border-b border-amber-300 focus:border-primary outline-none py-0.5" />
+                                          <input type="text" value={editDraft.lines[idx]?.fabric ?? ""} onChange={(e) => updateEditLine(idx, { fabric: e.target.value })} placeholder="Fabric" className="block w-full text-xs text-slate-500 bg-transparent border-b border-amber-300 focus:border-primary outline-none py-0.5" />
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <span className="font-black text-slate-900 uppercase tracking-tight text-sm">{line.designRef}</span>
+                                          <span className="block text-xs text-slate-500 mt-0.5">{line.fabric}</span>
+                                        </>
+                                      )}
+                                    </td>
+                                    <td className="py-6 text-center font-bold text-slate-500">
+                                      {isEditMode && editDraft ? (
+                                        <input type="number" min={0} step={0.01} value={editDraft.lines[idx]?.totalMeters ?? 0} onChange={(e) => updateEditLine(idx, { totalMeters: Number(e.target.value) || 0 })} className="w-20 text-center bg-transparent border-b border-amber-300 focus:border-primary outline-none py-0.5 font-bold" />
+                                      ) : (
+                                        `${line.totalMeters} LM`
+                                      )}
+                                    </td>
+                                    <td className="py-6 text-center font-bold text-slate-500">
+                                      {isEditMode && editDraft ? (
+                                        <input type="number" min={0} step={0.01} value={editDraft.lines[idx]?.pricePerMeter ?? 0} onChange={(e) => updateEditLine(idx, { pricePerMeter: Number(e.target.value) || 0 })} className="w-20 text-center bg-transparent border-b border-amber-300 focus:border-primary outline-none py-0.5 font-bold" />
+                                      ) : (
+                                        line.pricePerMeter.toLocaleString()
+                                      )}
+                                    </td>
+                                    <td className="py-6 text-right font-black text-slate-900 text-lg tracking-tighter">
+                                      {((inv.lines[idx]?.totalMeters ?? 0) * (inv.lines[idx]?.pricePerMeter ?? 0)).toLocaleString()} EGP
+                                    </td>
+                                    {isEditMode && editDraft && (
+                                      <td className="py-6">
+                                        <button type="button" onClick={() => removeEditLine(idx)} disabled={editDraft.lines.length <= 1} className="p-2 text-red-500 hover:bg-red-50 rounded-lg disabled:opacity-40">
+                                          <Trash2 size={16} />
+                                        </button>
+                                      </td>
+                                    )}
+                                  </tr>
+                                ))}
                               </tbody>
-                           </table>
-                        </div>
+                            </table>
+                            {isEditMode && editDraft && (
+                              <button type="button" onClick={addEditLine} className="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+                                <Plus size={14} /> Add line
+                              </button>
+                            )}
+                          </div>
 
-                    {/* Totals */}
-                        <div className="flex justify-end pt-16">
-                           <div className="w-80 space-y-6">
+                          {/* Totals */}
+                          <div className="flex justify-end pt-16">
+                            <div className="w-80 space-y-6">
                               <div className="flex justify-between items-center text-xs font-black text-slate-400 uppercase tracking-widest">
-                                 <span>Net Subtotal</span>
-                          <span className="text-slate-900 font-bold">
-                            {previewInvoice.subtotal.toLocaleString()} EGP
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center text-xs font-black text-slate-400 uppercase tracking-widest">
-                          <span>Discount ({previewInvoice.discountPct}%)</span>
-                          <span className="text-red-500 font-bold">
-                            -{previewInvoice.discountAmount.toLocaleString()} EGP
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center text-xs font-black text-slate-400 uppercase tracking-widest">
-                          <span>After discount</span>
-                          <span className="text-slate-900 font-bold">
-                            {previewInvoice.afterDiscount.toLocaleString()} EGP
-                          </span>
+                                <span>Net Subtotal</span>
+                                <span className="text-slate-900 font-bold">{totals.subtotal.toLocaleString()} EGP</span>
                               </div>
                               <div className="flex justify-between items-center text-xs font-black text-slate-400 uppercase tracking-widest">
-                          <span>VAT ({previewInvoice.vatPct}%)</span>
-                          <span className="text-slate-900 font-bold">
-                            +{previewInvoice.vatAmount.toLocaleString()} EGP
-                          </span>
+                                <span>
+                                  Discount (
+                                  {isEditMode && editDraft ? (
+                                    <input type="number" min={0} max={100} value={editDraft.discountPct} onChange={(e) => updateEditDraft({ discountPct: Number(e.target.value) })} className="w-12 text-center bg-transparent border-b border-amber-300 focus:border-primary outline-none py-0 font-black text-slate-700" />
+                                  ) : (
+                                    inv.discountPct
+                                  )}
+                                  %)
+                                </span>
+                                <span className="text-red-500 font-bold">-{totals.discountAmount.toLocaleString()} EGP</span>
+                              </div>
+                              <div className="flex justify-between items-center text-xs font-black text-slate-400 uppercase tracking-widest">
+                                <span>After discount</span>
+                                <span className="text-slate-900 font-bold">{totals.afterDiscount.toLocaleString()} EGP</span>
+                              </div>
+                              <div className="flex justify-between items-center text-xs font-black text-slate-400 uppercase tracking-widest">
+                                <span>
+                                  VAT (
+                                  {isEditMode && editDraft ? (
+                                    <input type="number" min={0} max={100} value={editDraft.vatPct} onChange={(e) => updateEditDraft({ vatPct: Number(e.target.value) })} className="w-12 text-center bg-transparent border-b border-amber-300 focus:border-primary outline-none py-0 font-black text-slate-700" />
+                                  ) : (
+                                    inv.vatPct
+                                  )}
+                                  %)
+                                </span>
+                                <span className="text-slate-900 font-bold">+{totals.vatAmount.toLocaleString()} EGP</span>
                               </div>
                               <div className="flex justify-between items-center py-8 px-8 bg-slate-900 text-white rounded-[30px] shadow-xl shadow-slate-200">
-                          <span className="text-[10px] font-black uppercase tracking-[0.3em] opacity-40">
-                            Grand Total
-                          </span>
-                          <span className="text-3xl font-black tracking-tighter">
-                            {previewInvoice.total.toLocaleString()}{" "}
-                            <span className="text-xs font-black">EGP</span>
-                          </span>
+                                <span className="text-[10px] font-black uppercase tracking-[0.3em] opacity-40">Grand Total</span>
+                                <span className="text-3xl font-black tracking-tighter">
+                                  {totals.total.toLocaleString()} <span className="text-xs font-black">EGP</span>
+                                </span>
                               </div>
-                           </div>
+                            </div>
+                          </div>
                         </div>
-                     </div>
 
-                  {/* Footer branding */}
-                     <div className="p-16 flex justify-between items-center bg-slate-50 text-[10px] font-black text-slate-300 uppercase tracking-[0.4em]">
-                        <span>Thank you for choosing DTX Group Egypt</span>
-                        <span className="text-primary opacity-20 italic">Validated Ledger Copy</span>
-                     </div>
-                  </div>
+                        {/* Footer */}
+                        <div className="p-16 flex justify-between items-center bg-slate-50 text-[10px] font-black text-slate-300 uppercase tracking-[0.4em]">
+                          <span>Thank you for choosing DTX Group Egypt</span>
+                          <span className="text-primary opacity-20 italic">Validated Ledger Copy</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
                </div>
              </>
            )}

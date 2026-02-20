@@ -1,11 +1,29 @@
 import { jsPDF } from "jspdf";
 import type { InvoiceDocument } from "@/types/billing";
+import logoUrl from "@/assets/Logo.png";
+
+/** Load logo from assets as data URL for PDF. */
+async function getLogoDataUrl(): Promise<string | null> {
+  try {
+    const r = await fetch(logoUrl);
+    if (!r.ok) return null;
+    const blob = await r.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Generate and download a branded PDF invoice.
- * Uses jsPDF for pure client-side rendering — no server needed.
+ * Uses jsPDF for pure client-side rendering. Logo from @/assets/Logo.png is included.
  */
-export function downloadInvoicePdf(invoice: InvoiceDocument): void {
+export async function downloadInvoicePdf(invoice: InvoiceDocument): Promise<void> {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const w = doc.internal.pageSize.getWidth();
   const margin = 20;
@@ -23,17 +41,27 @@ export function downloadInvoicePdf(invoice: InvoiceDocument): void {
   doc.setFillColor(...primary);
   doc.rect(0, 0, w, 8, "F");
 
-  // ── Company info ────────────────────────────────────
+  // ── Company info (logo if available, else text) ─────
+  const logoDataUrl = await getLogoDataUrl();
   y = 20;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(22);
-  doc.setTextColor(...dark);
-  doc.text("DTX PRINTING Center", margin, y);
-
+  if (logoDataUrl) {
+    try {
+      doc.addImage(logoDataUrl, "PNG", margin, 12, 35, 12);
+      y = 26;
+    } catch {
+      // fallback to text
+    }
+  }
+  if (!logoDataUrl || y === 20) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.setTextColor(...dark);
+    doc.text("DTX PRINTING Center", margin, y);
+    y += 7;
+  }
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(...muted);
-  y += 7;
   doc.text("Industrial Zone A, 4th Industrial City", margin, y);
   y += 4;
   doc.text("Cairo, Egypt  |  Tax ID: 990-221-440", margin, y);
@@ -47,7 +75,7 @@ export function downloadInvoicePdf(invoice: InvoiceDocument): void {
   doc.setFontSize(12);
   doc.setTextColor(...dark);
   doc.text(
-    `${invoice.customerName}.${invoice.billNumber}`,
+    invoice.invoiceNumber ?? `${invoice.customerName}.${invoice.billNumber}`,
     w - margin,
     32,
     { align: "right" }
@@ -220,6 +248,6 @@ export function downloadInvoicePdf(invoice: InvoiceDocument): void {
   );
 
   // ── Save ────────────────────────────────────────────
-  const filename = `Invoice_${invoice.customerName}_${invoice.billNumber}_${invoice.periodEnd}.pdf`;
+  const filename = `Invoice_${invoice.invoiceNumber ?? `${invoice.customerName}-${invoice.billNumber}`}_${invoice.periodEnd}.pdf`;
   doc.save(filename);
 }

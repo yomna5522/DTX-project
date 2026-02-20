@@ -17,9 +17,19 @@ export interface InvoiceLineItem {
   productionRunIds: string[];
 }
 
+/** Log entry when an admin changes an invoice number (for tracking). */
+export interface InvoiceNumberChangeLogEntry {
+  invoiceId: string;
+  oldInvoiceNumber: string;
+  newInvoiceNumber: string;
+  changedAt: string;
+}
+
 /** A full invoice document — the billing artefact */
 export interface InvoiceDocument {
   id: string;
+  /** Unique human-facing invoice ID (e.g. INV-0001). Auto-generated; admin can edit. Backfilled for old data. */
+  invoiceNumber?: string;
   /** Sequential bill number for the customer (e.g. "Palma.7" → 7) */
   billNumber: number;
   customerEntityId: string;
@@ -48,6 +58,8 @@ export interface InvoiceDocument {
   status: InvoiceDocumentStatus;
   /** Optional notes on the invoice */
   notes?: string;
+  /** Optional issued date (editable; falls back to createdAt if not set) */
+  issuedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
