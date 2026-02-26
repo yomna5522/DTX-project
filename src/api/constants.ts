@@ -3,10 +3,10 @@
  * Base URL: config.urls mounts accounts at api/, order at api/order/, etc.
  */
 
-/** Django runserver default is 8000. Override with VITE_API_BASE_URL if you use another port (e.g. 9000). */
+/** Production backend. Override with VITE_API_BASE_URL for local dev (e.g. http://localhost:8000). */
 export const API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ||
-  "http://localhost:8000";
+  "https://dtx-printing.flokisystems.com";
 
 /** Auth (accounts app) — prefix /api/ */
 export const AUTH_PATHS = {
