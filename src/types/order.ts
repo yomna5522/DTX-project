@@ -35,6 +35,8 @@ export interface FactoryFabric {
   minimumQuantity: number;
   availableMeters?: number;
   description?: string;
+  /** Image URL (from admin upload), shown in shop when set */
+  imageUrl?: string;
 }
 
 export interface DesignChoice {
@@ -85,6 +87,14 @@ export interface Invoice {
   status: "PENDING" | "ISSUED";
 }
 
+/** Customer info from backend (e.g. admin order user_info) — avoids extra user lookup in management */
+export interface OrderCustomerInfo {
+  id: number;
+  email: string;
+  phone: string;
+  fullname: string;
+}
+
 export interface Order {
   id: string;
   userId: string;
@@ -99,4 +109,8 @@ export interface Order {
   estimatedCompletion?: string;
   /** Optional link to the production-side customer entity */
   customerEntityId?: string;
+  /** When set (e.g. from admin API), use for customer display instead of looking up by userId */
+  user_info?: OrderCustomerInfo;
+  /** Backend order pk for admin API (e.g. add quotation) */
+  backendId?: number;
 }

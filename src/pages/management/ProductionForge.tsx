@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import ManagementLayout from "@/components/management/ManagementLayout";
 import {
@@ -42,7 +42,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { productionApi } from "@/api/production";
+import { adminProductionApi } from "@/api/adminProductionApi";
+import { adminAuthApi } from "@/api/adminAuth";
+import { ordersApi } from "@/api/orders";
 import type { ProductionRun, ProductionBillingStatus } from "@/types/production";
+import type { CustomerEntity } from "@/types/production";
 
 type StatusFilter = "All" | ProductionBillingStatus;
 
@@ -116,9 +120,36 @@ const ProductionForge = () => {
   const [formNotes, setFormNotes] = useState("");
   const [formOrderId, setFormOrderId] = useState("");
 
-  // Data
-  const allRuns = useMemo(() => productionApi.getAllRuns(), [refresh]);
-  const customers = useMemo(() => productionApi.getAllCustomerEntities(), [refresh]);
+  const isBackendMode = Boolean(adminAuthApi.getSession());
+  const [allRuns, setAllRuns] = useState<ProductionRun[]>([]);
+  const [customers, setCustomers] = useState<CustomerEntity[]>([]);
+  const [runsLoading, setRunsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!isBackendMode) {
+      setAllRuns(productionApi.getAllRuns());
+      setCustomers(productionApi.getAllCustomerEntities());
+      setRunsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setRunsLoading(true);
+    Promise.all([adminProductionApi.getRuns(), adminProductionApi.getCustomers()])
+      .then(([runs, custs]) => {
+        if (!cancelled) {
+          setAllRuns(runs);
+          setCustomers(custs);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAllRuns([]);
+      })
+      .finally(() => {
+        if (!cancelled) setRunsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [isBackendMode, refresh]);
+
   const machines = productionApi.getMachines();
   const commonFabrics = productionApi.getCommonFabrics();
 
@@ -183,40 +214,54 @@ const ProductionForge = () => {
     setIsAddOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formCustomer || !formDesignRef || !formFabric || formMeters <= 0) return;
-    if (editingRun) {
-      productionApi.updateRun(editingRun.id, {
-        date: formDate,
-        machine: formMachine,
-        customerEntityId: formCustomer,
-        designRef: formDesignRef,
-        fabric: formFabric,
-        metersPrinted: formMeters,
-        notes: formNotes,
-        sourceOrderId: formOrderId || undefined,
-      });
+    const payload = {
+      date: formDate,
+      machine: formMachine,
+      customerEntityId: formCustomer,
+      designRef: formDesignRef,
+      fabric: formFabric,
+      metersPrinted: formMeters,
+      notes: formNotes,
+      sourceOrderId: formOrderId || undefined,
+    };
+    if (isBackendMode) {
+      try {
+        if (editingRun) {
+          await adminProductionApi.updateRun(editingRun.id, payload);
+        } else {
+          await adminProductionApi.addRun(payload);
+        }
+        setRefresh((r) => r + 1);
+      } catch (e) {
+        console.error(e);
+      }
     } else {
-      productionApi.addRun({
-        date: formDate,
-        machine: formMachine,
-        customerEntityId: formCustomer,
-        designRef: formDesignRef,
-        fabric: formFabric,
-        metersPrinted: formMeters,
-        notes: formNotes,
-        sourceOrderId: formOrderId || undefined,
-      });
+      if (editingRun) {
+        productionApi.updateRun(editingRun.id, { ...payload, customerEntityId: formCustomer });
+      } else {
+        productionApi.addRun(payload);
+      }
+      setRefresh((r) => r + 1);
     }
     setIsAddOpen(false);
-    setRefresh((r) => r + 1);
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteTarget) return;
-    productionApi.deleteRun(deleteTarget.id);
+    if (isBackendMode) {
+      try {
+        await adminProductionApi.deleteRun(deleteTarget.id);
+        setRefresh((r) => r + 1);
+      } catch (e) {
+        console.error(e);
+      }
+    } else {
+      productionApi.deleteRun(deleteTarget.id);
+      setRefresh((r) => r + 1);
+    }
     setDeleteTarget(null);
-    setRefresh((r) => r + 1);
   };
 
   const toggleSelect = (id: string) => {
@@ -237,11 +282,27 @@ const ProductionForge = () => {
     }
   };
 
-  const handleBulkApprove = () => {
+  const handleBulkApprove = async () => {
     if (selectedIds.size === 0) return;
-    productionApi.approveRuns(Array.from(selectedIds));
-    setSelectedIds(new Set());
-    setRefresh((r) => r + 1);
+    const ids = Array.from(selectedIds);
+    if (isBackendMode) {
+      try {
+        await adminProductionApi.approveRuns(ids);
+        allRuns.forEach((r) => {
+          if (ids.includes(r.id) && r.sourceOrderId && ordersApi.getOrderById(r.sourceOrderId)) {
+            ordersApi.updateOrderStatus(r.sourceOrderId, "COMPLETED");
+          }
+        });
+        setSelectedIds(new Set());
+        setRefresh((r) => r + 1);
+      } catch (e) {
+        console.error(e);
+      }
+    } else {
+      productionApi.approveRuns(ids);
+      setSelectedIds(new Set());
+      setRefresh((r) => r + 1);
+    }
   };
 
   const custName = (id: string) =>
@@ -263,7 +324,7 @@ const ProductionForge = () => {
     return v as string | number;
   };
 
-  const handleSheetCellSave = (runId: string, key: string, value: string) => {
+  const handleSheetCellSave = async (runId: string, key: string, value: string) => {
     if (key === "customerName") return;
     const run = allRuns.find((r) => r.id === runId);
     if (!run) return;
@@ -276,13 +337,22 @@ const ProductionForge = () => {
     else if (key === "quantity") updates.quantity = value === "" ? undefined : parseFloat(value) || 0;
     else if (key === "notes") updates.notes = value;
     else if (key === "sourceOrderId") updates.sourceOrderId = value || undefined;
-    else if (key === "billingStatus") {
+    else if (key === "billingStatus" && !isBackendMode) {
       const v = value.toUpperCase().replace(/\s/g, "");
       if (v === "DRAFT" || v === "APPROVED" || v === "INVOICED") updates.billingStatus = v;
     }
     if (Object.keys(updates).length > 0) {
-      productionApi.updateRun(runId, updates);
-      setRefresh((r) => r + 1);
+      if (isBackendMode) {
+        try {
+          await adminProductionApi.updateRun(runId, updates);
+          setRefresh((r) => r + 1);
+        } catch (e) {
+          console.error(e);
+        }
+      } else {
+        productionApi.updateRun(runId, updates);
+        setRefresh((r) => r + 1);
+      }
     }
     setEditingCell(null);
   };
@@ -322,7 +392,7 @@ const ProductionForge = () => {
               </span>
             </h1>
             <p className="text-slate-400 text-sm font-medium italic">
-              Digital production sheet — daily print runs, log and approve. Approved shop orders are added here automatically.
+              Orders set to In Progress appear here. Approve runs to mark orders Done — they then flow to Billing Vault for invoicing.
             </p>
           </div>
 
@@ -375,7 +445,7 @@ const ProductionForge = () => {
               <Plus size={20} />
               <span className="hidden lg:inline">Log Run</span>
             </button>
-            {allRuns.length > 0 && (
+            {!isBackendMode && allRuns.length > 0 && (
               <button
                 onClick={() => setShowClearAllConfirm(true)}
                 className="p-4 lg:px-6 rounded-[22px] border-2 border-red-100 text-red-600 font-black text-xs tracking-widest hover:bg-red-50 transition-all flex items-center gap-2 uppercase whitespace-nowrap"
@@ -632,12 +702,18 @@ const ProductionForge = () => {
                 No runs in sheet. Add runs from Log view or they will appear here when orders are approved.
               </div>
             )}
-          </div>
+        </div>
         )}
 
         {/* ── Log view (table) ──────────────────────────────────────── */}
         {viewMode === "log" && (
         <div className="bg-white rounded-[45px] border border-slate-100 shadow-sm overflow-hidden min-h-[400px]">
+          {runsLoading ? (
+            <div className="p-24 flex flex-col items-center justify-center text-slate-400">
+              <p className="text-sm font-medium">Loading production runs…</p>
+            </div>
+          ) : (
+          <>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -773,6 +849,8 @@ const ProductionForge = () => {
                 Log your first run
               </button>
             </div>
+          )}
+          </>
           )}
         </div>
         )}

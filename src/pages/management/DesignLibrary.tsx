@@ -1,6 +1,6 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import ManagementLayout from "@/components/management/ManagementLayout";
-import { Palette, Plus, Pencil, Trash, Image as ImageIcon, UploadCloud, Search } from "lucide-react";
+import { Palette, Plus, Pencil, Trash, Image as ImageIcon, UploadCloud, Search, RefreshCw } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import {
   AlertDialog,
@@ -15,14 +15,22 @@ import {
 import { cn } from "@/lib/utils";
 import { ordersApi } from "@/api/orders";
 import { authApi } from "@/api/auth";
+import { adminAuthApi } from "@/api/adminAuth";
+import { adminDesignLibraryApi } from "@/api/adminDesignLibraryApi";
 import type { PresetDesign } from "@/types/order";
 
 const DesignLibrary = () => {
+  const isBackendMode = Boolean(adminAuthApi.getSession());
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [presets, setPresets] = useState<PresetDesign[]>(() => ordersApi.getPresetDesigns());
+  const [presets, setPresets] = useState<PresetDesign[]>(() =>
+    isBackendMode ? [] : ordersApi.getPresetDesigns()
+  );
+  const [loading, setLoading] = useState(isBackendMode);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState<PresetDesign | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [selectedDesignFile, setSelectedDesignFile] = useState<File | null>(null);
   const [form, setForm] = useState<{
     name: string;
     description: string;
@@ -43,6 +51,7 @@ const DesignLibrary = () => {
   const [clientSearch, setClientSearch] = useState("");
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [imagePreviewError, setImagePreviewError] = useState(false);
   const allClients = useMemo(() => authApi.getAllUsers(), []);
   const filteredClients = useMemo(() => {
@@ -56,7 +65,30 @@ const DesignLibrary = () => {
     );
   }, [allClients, clientSearch]);
 
-  const refresh = () => setPresets(ordersApi.getPresetDesigns());
+  const refetch = useCallback(async () => {
+    if (!isBackendMode) return;
+    setLoadError(null);
+    setLoading(true);
+    try {
+      const list = await adminDesignLibraryApi.getList();
+      setPresets(list);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Failed to load designs");
+      setPresets([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [isBackendMode]);
+
+  useEffect(() => {
+    if (!isBackendMode) return;
+    refetch();
+  }, [isBackendMode, refetch]);
+
+  const refresh = () => {
+    if (isBackendMode) refetch();
+    else setPresets(ordersApi.getPresetDesigns());
+  };
 
   const openCreate = () => {
     setForm({
@@ -71,6 +103,7 @@ const DesignLibrary = () => {
     setClientSearch("");
     setClientDropdownOpen(false);
     setImagePreviewError(false);
+    setSelectedDesignFile(null);
     setIsCreateOpen(true);
     setEditing(null);
     fileInputRef.current && (fileInputRef.current.value = "");
@@ -90,6 +123,7 @@ const DesignLibrary = () => {
     setClientSearch(isPrivate ? (p.solePropertyClientName || p.solePropertyClientId || "") : "");
     setClientDropdownOpen(false);
     setImagePreviewError(false);
+    setSelectedDesignFile(null);
     setEditing(p);
     setIsCreateOpen(false);
     fileInputRef.current && (fileInputRef.current.value = "");
@@ -101,7 +135,7 @@ const DesignLibrary = () => {
     setFieldError(null);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setFieldError(null);
     const nameTrimmed = form.name.trim();
     if (!nameTrimmed) {
@@ -110,6 +144,41 @@ const DesignLibrary = () => {
     }
     if (form.visibility === "private" && !form.solePropertyClientId) {
       setFieldError("Please assign a client for private designs.");
+      return;
+    }
+    if (isBackendMode) {
+      if (!editing && !selectedDesignFile) {
+        setFieldError("Please upload an image file for the design.");
+        return;
+      }
+      setSaving(true);
+      try {
+        if (editing) {
+          await adminDesignLibraryApi.update(editing.id, {
+            name: nameTrimmed,
+            description: form.description,
+            basePricePerUnit: form.basePricePerUnit,
+            visibility: form.visibility,
+            solePropertyClientId: form.solePropertyClientId || undefined,
+            ...(selectedDesignFile && { file: selectedDesignFile }),
+          });
+        } else {
+          await adminDesignLibraryApi.create({
+            name: nameTrimmed,
+            description: form.description,
+            basePricePerUnit: form.basePricePerUnit,
+            visibility: form.visibility,
+            solePropertyClientId: form.solePropertyClientId || undefined,
+            file: selectedDesignFile!,
+          });
+        }
+        await refetch();
+        closeSheet();
+      } catch (e) {
+        setFieldError(e instanceof Error ? e.message : "Save failed");
+      } finally {
+        setSaving(false);
+      }
       return;
     }
     const isPrivate = form.visibility === "private" && (form.solePropertyClientId || form.solePropertyClientName);
@@ -139,8 +208,19 @@ const DesignLibrary = () => {
 
   const handleDeleteClick = (id: string) => setDeleteConfirmId(id);
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!deleteConfirmId) return;
+    if (isBackendMode) {
+      try {
+        await adminDesignLibraryApi.delete(deleteConfirmId);
+        refresh();
+        closeSheet();
+        setDeleteConfirmId(null);
+      } catch {
+        // keep dialog open
+      }
+      return;
+    }
     ordersApi.deletePresetDesign(deleteConfirmId);
     refresh();
     closeSheet();
@@ -159,14 +239,33 @@ const DesignLibrary = () => {
             </h1>
             <p className="text-slate-400 text-sm font-medium italic mt-1">Preset designs for “Repeat Design” and “Existing design” in the shop.</p>
           </div>
-          <button
-            onClick={openCreate}
-            className="flex items-center gap-2 px-6 py-4 bg-primary text-white rounded-[22px] font-black text-xs tracking-widest uppercase shadow-xl shadow-primary/20 hover:scale-[1.02] transition-all"
-          >
-            <Plus size={20} /> Add design
-          </button>
+          <div className="flex items-center gap-2">
+            {isBackendMode && (
+              <button
+                onClick={refetch}
+                disabled={loading}
+                className="flex items-center gap-2 px-4 py-3 rounded-xl border border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                <RefreshCw size={16} className={loading ? "animate-spin" : ""} /> Refresh
+              </button>
+            )}
+            <button
+              onClick={openCreate}
+              className="flex items-center gap-2 px-6 py-4 bg-primary text-white rounded-[22px] font-black text-xs tracking-widest uppercase shadow-xl shadow-primary/20 hover:scale-[1.02] transition-all"
+            >
+              <Plus size={20} /> Add design
+            </button>
+          </div>
         </div>
-
+        {isBackendMode && loadError && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {loadError}
+          </div>
+        )}
+        {isBackendMode && loading && presets.length === 0 && (
+          <div className="py-12 text-center text-slate-500">Loading designs…</div>
+        )}
+        {!isBackendMode || !loading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {presets.map((p) => (
             <div
@@ -211,8 +310,9 @@ const DesignLibrary = () => {
             </div>
           ))}
         </div>
+        ) : null}
 
-        {presets.length === 0 && (
+        {!loading && presets.length === 0 && (
           <div className="py-24 text-center text-slate-400">
             <Palette size={48} className="mx-auto mb-4 opacity-50" />
             <p className="font-bold uppercase tracking-widest">No preset designs</p>
@@ -295,6 +395,7 @@ const DesignLibrary = () => {
                     onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (file && file.type.startsWith("image/")) {
+                        setSelectedDesignFile(file);
                         const reader = new FileReader();
                         reader.onload = () => setForm((f) => ({ ...f, imageUrl: reader.result as string }));
                         reader.readAsDataURL(file);
@@ -439,15 +540,15 @@ const DesignLibrary = () => {
           </div>
           <SheetFooter className="flex-shrink-0 flex gap-2 p-6 pt-4 border-t border-slate-100 bg-slate-50/50">
             {editing && (
-              <button onClick={() => handleDeleteClick(editing.id)} className="px-4 py-3 rounded-xl border border-red-200 text-red-600 font-bold text-sm hover:bg-red-50">
+              <button type="button" onClick={() => handleDeleteClick(editing.id)} className="px-4 py-3 rounded-xl border border-red-200 text-red-600 font-bold text-sm hover:bg-red-50">
                 Delete
               </button>
             )}
-            <button onClick={closeSheet} className="px-4 py-3 rounded-xl border border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50">
+            <button type="button" onClick={closeSheet} disabled={saving} className="px-4 py-3 rounded-xl border border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50">
               Cancel
             </button>
-            <button onClick={handleSave} className="px-6 py-3 rounded-xl bg-primary text-white font-bold text-sm hover:opacity-90">
-              {editing ? "Save" : "Add"}
+            <button type="button" onClick={handleSave} disabled={saving} className="px-6 py-3 rounded-xl bg-primary text-white font-bold text-sm hover:opacity-90 disabled:opacity-70">
+              {saving ? (editing ? "Saving…" : "Adding…") : editing ? "Save" : "Add"}
             </button>
           </SheetFooter>
         </SheetContent>

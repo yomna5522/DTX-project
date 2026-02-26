@@ -1,51 +1,50 @@
+/**
+ * Auth API — real backend integration. Uses shared client and authApi types.
+ */
+
+import { request, type ApiError } from "@/api/client";
+import { AUTH_PATHS } from "@/api/constants";
+import type {
+  ApiUser,
+  LoginRequest,
+  LoginResponse,
+  RegisterResponse,
+  ProfileResponse,
+  TokenRefreshResponse,
+  VerifyOtpResponse,
+  VerifyOtpForgetResponse,
+} from "@/types/authApi";
 import type { User, Session } from "@/types/auth";
 
 const STORAGE_KEY = "dtx_session";
-const USERS_STORAGE_KEY = "dtx_users";
 
-const SEED_USER: User = {
-  id: "existing-1",
-  email: "existing@dtx.example",
-  name: "Existing Customer",
-  username: "existing_customer",
-  customerType: "EXISTING",
-};
-
-function loadUsers(): User[] {
-  try {
-    const raw = localStorage.getItem(USERS_STORAGE_KEY);
-    if (!raw) return [SEED_USER];
-    const list = JSON.parse(raw) as User[];
-    const hasSeed = list.some((u) => u.id === SEED_USER.id);
-    return hasSeed ? list : [SEED_USER, ...list];
-  } catch {
-    return [SEED_USER];
-  }
+function apiUserToUser(api: ApiUser): User {
+  return {
+    id: String(api.id),
+    email: api.email,
+    name: api.fullname ?? api.email,
+    username: api.email,
+    customerType: "EXISTING",
+  };
 }
 
-function saveUsers(list: User[]) {
-  localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(list));
+interface StoredSession {
+  user: User;
+  accessToken: string;
+  refreshToken: string;
 }
 
-let users: User[] = loadUsers();
-
-// Temporary passwords for existing customers (mock: in real app these are issued by factory)
-const existingPasswords: Record<string, string> = {
-  existing_customer: "temp123",
-  "existing@dtx.example": "temp123",
-};
-
-function getStoredSession(): Session | null {
+function getStored(): StoredSession | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as Session;
+    return JSON.parse(raw) as StoredSession;
   } catch {
     return null;
   }
 }
 
-function setStoredSession(session: Session | null): void {
+function setStored(session: StoredSession | null): void {
   if (session) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
   } else {
@@ -53,77 +52,251 @@ function setStoredSession(session: Session | null): void {
   }
 }
 
+function sessionFromStored(stored: StoredSession | null): Session | null {
+  if (!stored) return null;
+  return { user: stored.user, token: stored.accessToken };
+}
+
+export function getSession(): Session | null {
+  return sessionFromStored(getStored());
+}
+
+/** Used by token provider to refresh; returns new access token only. */
+export function getStoredRefreshToken(): string | null {
+  return getStored()?.refreshToken ?? null;
+}
+
+/** Called by shared client after successful token refresh. */
+export function setAccessToken(access: string): void {
+  const stored = getStored();
+  if (stored) {
+    stored.accessToken = access;
+    setStored(stored);
+  }
+}
+
+function toErrorMessage(err: unknown): string {
+  if (err && typeof err === "object" && "message" in err) {
+    return String((err as ApiError).message);
+  }
+  return "Request failed.";
+}
+
 export const authApi = {
-  getSession(): Session | null {
-    return getStoredSession();
-  },
+  getSession,
 
-  login(identifier: string, password: string): { success: true; session: Session } | { success: false; error: string } {
-    const normalized = identifier.trim().toLowerCase();
-    const byEmail = users.find((u) => u.email.toLowerCase() === normalized);
-    const byUsername = users.find((u) => u.username.toLowerCase() === normalized);
-    const user = byEmail ?? byUsername;
-    if (!user) {
-      return { success: false, error: "Invalid email/username or password." };
-    }
-    const expectedPassword =
-      user.customerType === "EXISTING"
-        ? existingPasswords[user.username] ?? existingPasswords[user.email] ?? "temp123"
-        : (user as User & { password?: string }).password;
-    if (expectedPassword !== password) {
-      return { success: false, error: "Invalid email/username or password." };
-    }
-    const session: Session = {
-      user,
-      token: `mock-token-${user.id}-${Date.now()}`,
+  async login(
+    identifier: string,
+    password: string
+  ): Promise<{ success: true; session: Session } | { success: false; error: string }> {
+    const trimmed = identifier.trim();
+    const isEmail = trimmed.includes("@");
+    const body: LoginRequest = {
+      password,
+      ...(isEmail ? { email: trimmed } : { phone: trimmed }),
     };
-    setStoredSession(session);
-    return { success: true, session };
-  },
-
-  register(data: { name: string; email: string; password: string }): { success: true; session: Session } | { success: false; error: string } {
-    const email = data.email.trim().toLowerCase();
-    if (users.some((u) => u.email.toLowerCase() === email)) {
-      return { success: false, error: "An account with this email already exists." };
+    if (!body.email && !body.phone) {
+      return { success: false, error: "Please provide email or phone." };
     }
-    const username = email.split("@")[0].replace(/\W/g, "_") + "_" + Date.now().toString(36);
-    const user: User & { password?: string } = {
-      id: `user-${Date.now()}`,
-      email: data.email.trim(),
-      name: data.name.trim(),
-      username,
-      customerType: "NEW",
-      password: data.password,
-    };
-    users.push(user);
-    saveUsers(users);
-    const session: Session = { user, token: `mock-token-${user.id}-${Date.now()}` };
-    setStoredSession(session);
-    return { success: true, session };
+    try {
+      const data = await request<LoginResponse>({
+        method: "POST",
+        path: AUTH_PATHS.login,
+        body,
+        skipAuth: true,
+      });
+      const user = apiUserToUser(data.user);
+      const stored: StoredSession = {
+        user,
+        accessToken: data.access,
+        refreshToken: data.refresh,
+      };
+      setStored(stored);
+      return { success: true, session: { user, token: data.access } };
+    } catch (err) {
+      return { success: false, error: toErrorMessage(err) };
+    }
   },
 
-  getUserById(id: string): User | undefined {
-    users = loadUsers();
-    return users.find((u) => u.id === id);
+  async register(data: {
+    name: string;
+    email: string;
+    password: string;
+    password_confirm: string;
+    phone?: string;
+  }): Promise<
+    | { success: true; session: Session }
+    | { success: true; needsVerification: true; phone: string }
+    | { success: false; error: string }
+  > {
+    const password_confirm = data.password_confirm ?? data.password;
+    if (data.password !== password_confirm) {
+      return { success: false, error: "Passwords do not match." };
+    }
+    if (!data.phone?.trim()) {
+      return { success: false, error: "Phone is required." };
+    }
+    try {
+      const res = await request<RegisterResponse>({
+        method: "POST",
+        path: AUTH_PATHS.register,
+        body: {
+          email: data.email.trim(),
+          phone: data.phone.trim(),
+          password: data.password,
+          password_confirm,
+          fullname: data.name.trim() || undefined,
+        },
+        skipAuth: true,
+      });
+      if (!res.is_verified) {
+        return { success: true, needsVerification: true, phone: res.phone };
+      }
+      const user = apiUserToUser(res);
+      const stored: StoredSession = {
+        user,
+        accessToken: res.access,
+        refreshToken: res.refresh,
+      };
+      setStored(stored);
+      return { success: true, session: { user, token: res.access } };
+    } catch (err) {
+      const e = err as ApiError;
+      if (e.details) {
+        const first = Object.entries(e.details).map(([k, v]) => (v && v[0]) ? `${k}: ${v[0]}` : "").find(Boolean);
+        return { success: false, error: first ?? e.message };
+      }
+      return { success: false, error: toErrorMessage(err) };
+    }
   },
 
-  getAllUsers(): User[] {
-    users = loadUsers();
-    return [...users];
+  async verifyOtp(phone: string, otp: string, forget = false): Promise<{ success: true } | { success: false; error: string }> {
+    try {
+      const path = forget ? `${AUTH_PATHS.verifyOtp}?forget=true` : AUTH_PATHS.verifyOtp;
+      const data = await request<VerifyOtpResponse | VerifyOtpForgetResponse>({
+        method: "POST",
+        path,
+        body: { phone, otp },
+        skipAuth: true,
+      });
+      if ("tokens" in data && data.tokens?.access) {
+        const stored = getStored();
+        if (stored) {
+          stored.accessToken = data.tokens.access;
+          setStored(stored);
+        }
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: toErrorMessage(err) };
+    }
+  },
+
+  async resendOtp(phone: string, forget = false): Promise<{ success: true } | { success: false; error: string }> {
+    try {
+      const path = forget ? `${AUTH_PATHS.resendOtp}?forget=true` : AUTH_PATHS.resendOtp;
+      await request<{ message: string }>({
+        method: "POST",
+        path,
+        body: { phone },
+        skipAuth: true,
+      });
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: toErrorMessage(err) };
+    }
+  },
+
+  async setPassword(newPassword: string, newPasswordConfirm: string): Promise<{ success: true } | { success: false; error: string }> {
+    try {
+      await request<{ message: string }>({
+        method: "POST",
+        path: AUTH_PATHS.setPassword,
+        body: { new_password: newPassword, new_password_confirm: newPasswordConfirm },
+      });
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: toErrorMessage(err) };
+    }
+  },
+
+  async changePassword(
+    oldPassword: string,
+    newPassword: string,
+    newPasswordConfirm: string
+  ): Promise<{ success: true } | { success: false; error: string }> {
+    try {
+      await request<{ message: string }>({
+        method: "POST",
+        path: AUTH_PATHS.changePassword,
+        body: {
+          old_password: oldPassword,
+          new_password: newPassword,
+          new_password_confirm: newPasswordConfirm,
+        },
+      });
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: toErrorMessage(err) };
+    }
+  },
+
+  async getProfile(): Promise<ProfileResponse | null> {
+    try {
+      return await request<ProfileResponse>({ method: "GET", path: AUTH_PATHS.profile });
+    } catch {
+      return null;
+    }
+  },
+
+  async updateProfile(updates: { fullname?: string; address?: string; avatar?: File }): Promise<{ success: true; user: User } | { success: false; error: string }> {
+    try {
+      if (updates.avatar) {
+        const form = new FormData();
+        if (updates.fullname !== undefined) form.set("fullname", updates.fullname);
+        if (updates.address !== undefined) form.set("address", updates.address);
+        form.set("avatar", updates.avatar);
+        const data = await request<ProfileResponse>({
+          method: "PATCH",
+          path: AUTH_PATHS.profile,
+          formData: form,
+        });
+        const stored = getStored();
+        if (stored) {
+          stored.user = apiUserToUser(data);
+          setStored(stored);
+        }
+        return { success: true, user: apiUserToUser(data) };
+      }
+      const data = await request<ProfileResponse>({
+        method: "PATCH",
+        path: AUTH_PATHS.profile,
+        body: {
+          ...(updates.fullname !== undefined && { fullname: updates.fullname }),
+          ...(updates.address !== undefined && { address: updates.address }),
+        },
+      });
+      const stored = getStored();
+      if (stored) {
+        stored.user = apiUserToUser(data);
+        setStored(stored);
+      }
+      return { success: true, user: apiUserToUser(data) };
+    } catch (err) {
+      return { success: false, error: toErrorMessage(err) };
+    }
   },
 
   logout(): void {
-    setStoredSession(null);
+    setStored(null);
   },
 
-  changePassword(userId: string, currentPassword: string, newPassword: string): { success: true } | { success: false; error: string } {
-    const user = users.find((u) => u.id === userId) as (User & { password?: string }) | undefined;
-    if (!user) return { success: false, error: "User not found." };
-    const expected = user.customerType === "EXISTING" ? existingPasswords[user.username] ?? existingPasswords[user.email] ?? "temp123" : user.password;
-    if (expected !== currentPassword) return { success: false, error: "Current password is incorrect." };
-    if (user.customerType === "NEW") {
-      user.password = newPassword;
-    }
-    return { success: true };
+  /** Management / legacy: not provided by customer API; return empty so callers don’t break. */
+  getUserById(_id: string): User | undefined {
+    return undefined;
+  },
+
+  getAllUsers(): User[] {
+    return [];
   },
 };

@@ -13,19 +13,26 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? "/shop";
+  const from = (location.state as { from?: { pathname: string }; message?: string })?.from?.pathname ?? "/shop";
+  const successMessage = (location.state as { message?: string })?.message;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    const result = login(identifier, password);
-    if (result.success) {
-      navigate(from, { replace: true });
-    } else {
-      setError(result.error ?? "Login failed.");
+    setSubmitting(true);
+    try {
+      const result = await login(identifier, password);
+      if (result.success) {
+        navigate(from, { replace: true });
+      } else {
+        setError(result.error ?? "Login failed.");
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -55,8 +62,18 @@ const Login = () => {
 
         <div className="bg-white rounded-2xl p-10 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5)]">
           <form onSubmit={handleSubmit} className="space-y-6">
+            {successMessage && (
+              <p className="text-green-700 text-sm font-medium bg-green-100 py-2 px-3 rounded-lg">{successMessage}</p>
+            )}
             {error && (
-              <p className="text-destructive text-sm font-medium bg-destructive/10 py-2 px-3 rounded-lg">{error}</p>
+              <div className="space-y-2">
+                <p className="text-destructive text-sm font-medium bg-destructive/10 py-2 px-3 rounded-lg">{error}</p>
+                {error.includes("not verified") && (
+                  <Link to="/verify-account" className="text-accent font-bold text-sm hover:underline block">
+                    Verify my account →
+                  </Link>
+                )}
+              </div>
             )}
             <div className="space-y-2">
               <label className="text-primary font-bold text-xs uppercase tracking-widest ml-1 rtl:mr-1 rtl:ml-0">{t("pages.login.emailOrUsername")}</label>
@@ -89,8 +106,8 @@ const Login = () => {
               </div>
             </div>
 
-            <button type="submit" className="w-full bg-accent text-white py-4 rounded-lg font-black text-xs tracking-[0.2em] uppercase hover:bg-accent/90 transition-all shadow-xl shadow-accent/20 flex items-center justify-center gap-3">
-              <LogIn className="h-4 w-4" /> {t("pages.login.signIn")}
+            <button type="submit" disabled={submitting} className="w-full bg-accent text-white py-4 rounded-lg font-black text-xs tracking-[0.2em] uppercase hover:bg-accent/90 transition-all shadow-xl shadow-accent/20 flex items-center justify-center gap-3 disabled:opacity-70">
+              <LogIn className="h-4 w-4" /> {submitting ? t("common.loading") : t("pages.login.signIn")}
             </button>
             
             <div className="pt-4 text-center">

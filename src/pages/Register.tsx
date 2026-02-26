@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Eye, EyeOff, UserPlus, User, Mail, Lock } from "lucide-react";
+import { Eye, EyeOff, UserPlus, User, Mail, Lock, Phone } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import TopBar from "@/components/TopBar";
 import Navbar from "@/components/Navbar";
@@ -9,24 +9,50 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const Register = () => {
   const { t } = useTranslation();
-  const [form, setForm] = useState({ name: "", email: "", password: "", confirmPassword: "" });
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    password: "",
+    confirmPassword: "",
+  });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const { register } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     if (form.password !== form.confirmPassword) {
       setError("Passwords do not match.");
       return;
     }
-    const result = register({ name: form.name, email: form.email, password: form.password });
-    if (result.success) {
-      navigate("/shop", { replace: true });
-    } else {
+    if (!form.phone.trim()) {
+      setError("Phone is required.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const result = await register({
+        name: form.name,
+        email: form.email,
+        password: form.password,
+        password_confirm: form.confirmPassword,
+        phone: form.phone.trim(),
+      });
+      if (result.success && "needsVerification" in result) {
+        navigate("/verify-account", { state: { phone: result.phone }, replace: true });
+        return;
+      }
+      if (result.success) {
+        navigate("/shop", { replace: true });
+        return;
+      }
       setError(result.error ?? "Registration failed.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -84,6 +110,18 @@ const Register = () => {
             </div>
 
             <div className="space-y-2">
+              <label className="text-primary font-bold text-xs uppercase tracking-widest ml-1 rtl:mr-1 rtl:ml-0">{t("pages.register.phone")}</label>
+              <div className="relative">
+                <input
+                  type="tel" required placeholder="+1234567890"
+                  value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  className="w-full bg-[#F5F7F9] border-none py-4 px-6 rounded-lg text-sm focus:ring-1 focus:ring-accent transition-all pl-12"
+                />
+                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-accent opacity-50" />
+              </div>
+            </div>
+
+            <div className="space-y-2">
               <label className="text-primary font-bold text-xs uppercase tracking-widest ml-1 rtl:mr-1 rtl:ml-0">{t("pages.register.password")}</label>
               <div className="relative">
                 <input
@@ -114,8 +152,8 @@ const Register = () => {
               </div>
             </div>
 
-            <button type="submit" className="w-full bg-accent text-white py-4 rounded-lg font-black text-xs tracking-[0.2em] uppercase hover:bg-accent/90 transition-all shadow-xl shadow-accent/20 flex items-center justify-center gap-3">
-              <UserPlus className="h-4 w-4" /> {t("pages.register.createAccount")}
+            <button type="submit" disabled={submitting} className="w-full bg-accent text-white py-4 rounded-lg font-black text-xs tracking-[0.2em] uppercase hover:bg-accent/90 transition-all shadow-xl shadow-accent/20 flex items-center justify-center gap-3 disabled:opacity-70">
+              <UserPlus className="h-4 w-4" /> {submitting ? t("common.loading") : t("pages.register.createAccount")}
             </button>
             
             <div className="pt-4 text-center">

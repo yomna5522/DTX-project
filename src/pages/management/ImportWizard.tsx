@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef } from "react";
+import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import ManagementLayout from "@/components/management/ManagementLayout";
 import {
   Upload,
@@ -14,7 +14,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { productionApi } from "@/api/production";
+import { adminAuthApi } from "@/api/adminAuth";
+import { adminProductionApi } from "@/api/adminProductionApi";
 import type { ProductionBillingStatus } from "@/types/production";
+import type { CustomerEntity } from "@/types/production";
 import * as XLSX from "xlsx";
 
 // ── Target fields for production runs ─────────────────────
@@ -52,13 +55,32 @@ const ImportWizard = () => {
 
   // Result
   const [importedCount, setImportedCount] = useState(0);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importValidationErrors, setImportValidationErrors] = useState<Array<{ index: number; error: string }>>([]);
 
   // Raw sheet rows so we can re-parse with a different header row
   const rawRowsRef = useRef<unknown[][]>([]);
   const [headerRowIndex, setHeaderRowIndex] = useState(0);
   const [rawRowCount, setRawRowCount] = useState(0);
 
-  const customers = useMemo(() => productionApi.getAllCustomerEntities(), []);
+  const isBackendMode = Boolean(adminAuthApi.getSession());
+  const [backendCustomers, setBackendCustomers] = useState<CustomerEntity[]>([]);
+  const [customersLoading, setCustomersLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isBackendMode) return;
+    setCustomersLoading(true);
+    adminProductionApi
+      .getCustomers()
+      .then((list) => {
+        setBackendCustomers(list);
+        if (list.length > 0 && !defaultCustomer) setDefaultCustomer(list[0].id);
+      })
+      .catch(() => setBackendCustomers([]))
+      .finally(() => setCustomersLoading(false));
+  }, [isBackendMode]);
+
+  const customers = isBackendMode ? backendCustomers : productionApi.getAllCustomerEntities();
   const machines = productionApi.getMachines();
 
   const applyHeaderRow = useCallback((rowIndex: number, rawRows: unknown[][]) => {
@@ -230,12 +252,13 @@ const ImportWizard = () => {
   }, [mapping]);
 
   // ── Step 4: Import ─────────────────────────────────────
-  const handleImport = () => {
+  const handleImport = async () => {
+    setImportError(null);
+    setImportValidationErrors([]);
     const toImport = rawData.map((row) => {
       const dateRaw = mapping.date ? row[mapping.date] : "";
       let dateStr = "";
       if (typeof dateRaw === "number") {
-        // Excel serial date
         const d = XLSX.SSF.parse_date_code(dateRaw);
         dateStr = `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`;
       } else {
@@ -270,6 +293,26 @@ const ImportWizard = () => {
       };
     }).filter((r) => r.metersPrinted > 0);
 
+    if (isBackendMode) {
+      if (!defaultCustomer && toImport.some((r) => !r.customerEntityId)) {
+        setImportError("Default Customer is required when no column is mapped for Customer. Select a default customer or map a column.");
+        return;
+      }
+      const validForBackend = toImport.filter((r) => r.customerEntityId && r.date);
+      if (validForBackend.length === 0) {
+        setImportError("No valid rows to import: each row needs a customer (default or from column) and a date.");
+        return;
+      }
+      try {
+        const result = await adminProductionApi.importRuns(validForBackend);
+        setImportedCount(result.imported);
+        if (result.errors?.length) setImportValidationErrors(result.errors);
+        setStep("done");
+      } catch (e) {
+        setImportError(e instanceof Error ? e.message : "Import failed");
+      }
+      return;
+    }
     const imported = productionApi.importRuns(toImport);
     setImportedCount(imported.length);
     setStep("done");
@@ -512,15 +555,21 @@ const ImportWizard = () => {
               <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">
                 Default Values (used when column is skipped)
               </h4>
+              {isBackendMode && (
+                <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
+                  <strong>Backend mode:</strong> Default Customer is required for import. Rows without a customer column will use this default.
+                </p>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase">
-                    Default Customer
+                    Default Customer {isBackendMode && <span className="text-red-500">*</span>}
                   </label>
                   <select
                     value={defaultCustomer}
                     onChange={(e) => setDefaultCustomer(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-bold bg-white"
+                    disabled={customersLoading}
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-bold bg-white disabled:opacity-60"
                   >
                     <option value="">— None —</option>
                     {customers.map((c) => (
@@ -640,6 +689,25 @@ const ImportWizard = () => {
               </div>
             </div>
 
+            {importError && (
+              <div className="flex items-start gap-2 p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm">
+                <AlertCircle size={18} className="flex-shrink-0 mt-0.5" />
+                <span>{importError}</span>
+              </div>
+            )}
+            {importValidationErrors.length > 0 && (
+              <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm space-y-1">
+                <p className="font-bold">Some rows had validation errors and were skipped:</p>
+                <ul className="list-disc list-inside">
+                  {importValidationErrors.slice(0, 10).map((e, i) => (
+                    <li key={i}>Row {e.index + 1}: {e.error}</li>
+                  ))}
+                  {importValidationErrors.length > 10 && (
+                    <li>… and {importValidationErrors.length - 10} more</li>
+                  )}
+                </ul>
+              </div>
+            )}
             <div className="flex gap-3">
               <button
                 onClick={() => setStep("map")}
@@ -648,10 +716,14 @@ const ImportWizard = () => {
                 <ArrowLeft size={16} className="inline mr-1" /> Adjust Mapping
               </button>
               <button
-                onClick={handleImport}
-                className="px-8 py-3 bg-primary text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-primary/20 hover:opacity-90 transition-all flex items-center gap-2"
+                onClick={() => handleImport()}
+                disabled={isBackendMode && !defaultCustomer}
+                className="px-8 py-3 bg-primary text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-primary/20 hover:opacity-90 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Check size={16} /> Import {rawData.length} rows
+                <Check size={16} /> Import {rawData.filter((row) => {
+                  const m = mapping.metersPrinted ? row[mapping.metersPrinted] : 0;
+                  return (typeof m === "number" ? m : parseFloat(String(m)) || 0) > 0;
+                }).length} rows
               </button>
             </div>
           </div>
@@ -669,6 +741,11 @@ const ImportWizard = () => {
             <p className="text-slate-500 text-sm font-medium">
               Successfully imported <span className="text-primary font-black">{importedCount}</span>{" "}
               production runs into the system.
+              {importValidationErrors.length > 0 && (
+                <span className="block mt-2 text-amber-700">
+                  {importValidationErrors.length} row(s) were skipped due to validation errors.
+                </span>
+              )}
             </p>
             <div className="flex justify-center gap-4 pt-6">
               <button
@@ -678,6 +755,8 @@ const ImportWizard = () => {
                   setRawData([]);
                   setColumns([]);
                   setMapping({} as Record<TargetKey, string>);
+                  setImportError(null);
+                  setImportValidationErrors([]);
                 }}
                 className="px-8 py-3 bg-slate-100 rounded-xl font-black text-xs text-slate-500 uppercase tracking-widest"
               >

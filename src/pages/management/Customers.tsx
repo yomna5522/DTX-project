@@ -1,5 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import ManagementLayout from "@/components/management/ManagementLayout";
+import { adminCustomersApi, type AdminCustomerItem } from "@/api/adminCustomersApi";
+import { adminAuthApi } from "@/api/adminAuth";
 import { 
   Plus, 
   Search, 
@@ -25,8 +27,8 @@ import {
   Calendar,
   Lock,
   Download,
-  Share2,
-  PackageCheck
+  PackageCheck,
+  RefreshCw
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { 
@@ -140,6 +142,27 @@ const initialCustomers: Customer[] = [
   }
 ];
 
+/** Map backend customer (registered user) to UI Customer shape */
+function mapBackendToCustomer(b: AdminCustomerItem): Customer {
+  const name = b.fullname?.trim() || b.email || b.phone || "Customer";
+  return {
+    id: String(b.id),
+    name,
+    company: "", // backend User has no company field
+    email: b.email,
+    phone: b.phone,
+    type: b.order_count >= 2 ? "Regular" : "One-Time",
+    balance: 0, // not provided by backend yet
+    totalOrders: b.order_count,
+    status: b.is_active ? "Active" : "Suspended",
+    designsCount: 0,
+    materialsCount: 0,
+    transactions: [],
+    materials: [],
+    designs: [],
+  };
+}
+
 // --- Components ---
 
 const CustomerAvatar = ({ name, avatar, size = "md" }: { name: string, avatar?: string, size?: "sm" | "md" | "lg" | "xl" }) => {
@@ -171,7 +194,10 @@ const CustomerAvatar = ({ name, avatar, size = "md" }: { name: string, avatar?: 
 };
 
 const Customers = () => {
-  const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
+  const isBackendMode = Boolean(adminAuthApi.getSession());
+  const [customers, setCustomers] = useState<Customer[]>(() => (isBackendMode ? [] : initialCustomers));
+  const [loading, setLoading] = useState(isBackendMode);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState<CustomerType | 'All'>('All');
   
@@ -189,8 +215,30 @@ const Customers = () => {
     materialsCount: 0
   });
 
+  const refetch = useCallback(() => {
+    if (!isBackendMode) return;
+    setLoadError(null);
+    setLoading(true);
+    adminCustomersApi
+      .getCustomers()
+      .then((list) => setCustomers(list.map(mapBackendToCustomer)))
+      .catch((e) => setLoadError(e instanceof Error ? e.message : "Failed to load customers"))
+      .finally(() => setLoading(false));
+  }, [isBackendMode]);
+
+  useEffect(() => {
+    if (isBackendMode) refetch();
+    else setCustomers(initialCustomers);
+  }, [isBackendMode, refetch]);
+
   const handleAddCustomer = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isBackendMode) {
+      // Customers are created when they register via the app; no admin create yet
+      setIsAddSheetOpen(false);
+      setNewCustomer({ type: 'Regular', status: 'Active' });
+      return;
+    }
     if (!newCustomer.name || !newCustomer.email) return;
 
     const customerToAdd: Customer = {
@@ -228,7 +276,16 @@ const Customers = () => {
             <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">
               Customer <span className="text-primary underline decoration-accent decoration-4 underline-offset-4">Database</span>
             </h1>
-            <p className="text-slate-400 text-sm font-medium">Manage accounts, materials, and cloud storage for 124 clients.</p>
+            <p className="text-slate-400 text-sm font-medium">
+              Manage accounts, materials, and cloud storage for <strong>{customers.length}</strong> client{customers.length !== 1 ? "s" : ""}.
+            </p>
+            {loadError && (
+              <div className="mt-2 p-4 rounded-2xl bg-red-50 border border-red-200 flex flex-col gap-2">
+                <p className="text-red-700 font-bold text-sm">Could not load customers</p>
+                <p className="text-red-600 text-xs">{loadError}</p>
+                <p className="text-slate-500 text-[10px]">Ensure the backend is running and you are logged in as admin. Then click Refresh.</p>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-4 w-full lg:w-auto">
@@ -242,6 +299,18 @@ const Customers = () => {
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
              </div>
+             {isBackendMode && (
+               <button
+                 type="button"
+                 onClick={refetch}
+                 disabled={loading}
+                 className="p-4 rounded-[20px] border border-slate-200 bg-white font-black text-xs tracking-widest text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-all flex items-center gap-2"
+                 title="Refresh customer list"
+               >
+                 <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
+                 <span className="hidden lg:inline">Refresh</span>
+               </button>
+             )}
              <button 
                 onClick={() => setIsAddSheetOpen(true)}
                 className="bg-primary text-white p-4 lg:px-8 rounded-[20px] font-black text-xs tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2"
@@ -305,7 +374,19 @@ const Customers = () => {
 
         {/* Customer Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-           {filteredCustomers.map((customer) => (
+           {loading ? (
+             <div className="col-span-full py-20 text-center">
+               <RefreshCw size={32} className="animate-spin text-primary mx-auto mb-4" />
+               <p className="text-slate-500 font-bold uppercase tracking-widest text-sm">Loading customers…</p>
+             </div>
+           ) : !loadError && isBackendMode && filteredCustomers.length === 0 ? (
+             <div className="col-span-full py-16 text-center rounded-[40px] border-2 border-dashed border-slate-200 bg-slate-50/50">
+               <p className="text-slate-600 font-bold uppercase tracking-widest text-sm">No customers in database</p>
+               <p className="text-slate-400 text-xs mt-2 max-w-md mx-auto">Customers appear here when they register via the app. If you expect to see accounts, click Refresh or check the backend.</p>
+               <button type="button" onClick={refetch} className="mt-4 px-6 py-2 rounded-xl bg-primary text-white text-xs font-black uppercase">Refresh</button>
+             </div>
+           ) : (
+           filteredCustomers.map((customer) => (
               <div 
                 key={customer.id}
                 onClick={() => {
@@ -337,7 +418,7 @@ const Customers = () => {
                 <div className="space-y-2 mb-8 relative z-10">
                   <h3 className="text-2xl font-black text-slate-900 tracking-tight group-hover:text-primary transition-colors uppercase">{customer.name}</h3>
                   <div className="flex items-center gap-2 text-slate-400 font-bold text-xs uppercase tracking-tight">
-                    <Building2 size={14} className="text-primary" /> {customer.company}
+                    <Building2 size={14} className="text-primary" /> {customer.company || "—"}
                   </div>
                 </div>
 
@@ -373,7 +454,7 @@ const Customers = () => {
                    </button>
                 </div>
               </div>
-           ))}
+           )))}
 
            {/* Add Placeholder Card */}
            <div 
@@ -404,6 +485,11 @@ const Customers = () => {
              </SheetHeader>
           </div>
 
+          {isBackendMode && (
+            <div className="mx-6 mt-4 p-4 rounded-2xl bg-primary/10 border border-primary/20 text-primary text-xs font-bold uppercase tracking-wide">
+              Customers are added when they register via the app. Use Refresh to see new registrations.
+            </div>
+          )}
           <form onSubmit={handleAddCustomer} className="flex-1 overflow-y-auto p-12 space-y-8 bg-white">
              {/* Account Identity */}
              <div className="space-y-6">
@@ -548,7 +634,7 @@ const Customers = () => {
                       </div>
                       <div className="flex flex-wrap items-center justify-center md:justify-start gap-6 text-slate-400 font-bold text-sm">
                          <div className="flex items-center gap-2 uppercase tracking-tight">
-                            <Building2 size={16} className="text-primary" /> {selectedCustomer.company}
+                            <Building2 size={16} className="text-primary" /> {selectedCustomer.company || "—"}
                          </div>
                          <div className="flex items-center gap-2 uppercase tracking-tight">
                             <Mail size={16} className="text-primary" /> {selectedCustomer.email}
@@ -577,7 +663,6 @@ const Customers = () => {
                     <TabsTrigger value="overview" className="data-[state=active]:bg-transparent data-[state=active]:border-primary data-[state=active]:text-primary border-b-4 border-transparent px-2 py-4 rounded-none h-auto text-[11px] font-black uppercase tracking-widest text-slate-400">Overview</TabsTrigger>
                     <TabsTrigger value="transactions" className="data-[state=active]:bg-transparent data-[state=active]:border-primary data-[state=active]:text-primary border-b-4 border-transparent px-2 py-4 rounded-none h-auto text-[11px] font-black uppercase tracking-widest text-slate-400">Transactions</TabsTrigger>
                     <TabsTrigger value="materials" className="data-[state=active]:bg-transparent data-[state=active]:border-primary data-[state=active]:text-primary border-b-4 border-transparent px-2 py-4 rounded-none h-auto text-[11px] font-black uppercase tracking-widest text-slate-400">Materials</TabsTrigger>
-                    <TabsTrigger value="cloud" className="data-[state=active]:bg-transparent data-[state=active]:border-primary data-[state=active]:text-primary border-b-4 border-transparent px-2 py-4 rounded-none h-auto text-[11px] font-black uppercase tracking-widest text-slate-400">Cloud Designs</TabsTrigger>
                     <TabsTrigger value="access" className="data-[state=active]:bg-transparent data-[state=active]:border-primary data-[state=active]:text-primary border-b-4 border-transparent px-2 py-4 rounded-none h-auto text-[11px] font-black uppercase tracking-widest text-slate-400">Access Mgmt</TabsTrigger>
                   </TabsList>
 
@@ -603,23 +688,15 @@ const Customers = () => {
                             </button>
                          </div>
 
-                         {/* Quick Stats Grid */}
+                         {/* Quick Stats Grid — Total Orders from backend (order_count); Designs only */}
                          <div className="grid grid-cols-2 gap-4">
                             <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm">
                                <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-1">Total Orders</p>
                                <p className="text-2xl font-black text-slate-900">{selectedCustomer.totalOrders}</p>
                             </div>
                             <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm">
-                               <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-1">Stock Rolls</p>
-                               <p className="text-2xl font-black text-slate-900">{selectedCustomer.materialsCount}</p>
-                            </div>
-                            <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm">
                                <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-1">Designs</p>
                                <p className="text-2xl font-black text-slate-900">{selectedCustomer.designsCount}</p>
-                            </div>
-                            <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm bg-primary/5 border-primary/10">
-                               <p className="text-[10px] font-black text-primary uppercase tracking-widest mb-1">Reliability</p>
-                               <p className="text-2xl font-black text-primary italic">Grade A</p>
                             </div>
                          </div>
                       </div>
@@ -704,38 +781,6 @@ const Customers = () => {
                       </div>
                   </TabsContent>
 
-                  <TabsContent value="cloud" className="space-y-4 animate-fade-in-up">
-                      <div className="bg-primary p-12 rounded-[40px] text-white relative overflow-hidden mb-8">
-                         <div className="absolute top-0 right-0 p-8 opacity-10">
-                            <Share2 size={120} />
-                         </div>
-                         <h3 className="text-2xl font-black uppercase tracking-tighter mb-4">Sharing Link</h3>
-                         <p className="text-white/60 text-sm max-w-sm mb-6">Give your customer access to upload their own design files directly to this cloud.</p>
-                         <button className="bg-white text-primary px-8 py-4 rounded-xl font-black text-xs tracking-widest hover:scale-105 transition-all">
-                            COPY ACCESS LINK
-                         </button>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                         {selectedCustomer.designs.map((d) => (
-                           <div key={d.id} className="bg-white p-6 rounded-[24px] border border-slate-100 shadow-sm flex items-center justify-between group">
-                              <div className="flex items-center gap-4">
-                                 <div className="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center text-primary font-black text-xs">
-                                   {d.format}
-                                 </div>
-                                 <div>
-                                    <p className="text-sm font-black text-slate-900 group-hover:text-primary transition-colors">{d.name}</p>
-                                    <p className="text-[10px] text-slate-400 font-bold uppercase">{d.uploadDate} • {d.size}</p>
-                                 </div>
-                              </div>
-                              <button className="p-3 hover:bg-slate-50 rounded-lg text-slate-400">
-                                 <Download size={18} />
-                              </button>
-                           </div>
-                         ))}
-                      </div>
-                  </TabsContent>
-
                   <TabsContent value="access" className="space-y-10 animate-fade-in-up">
                       <div className="bg-white p-10 rounded-[32px] border border-slate-100 shadow-sm space-y-8">
                          <div className="flex justify-between items-center">
@@ -801,25 +846,6 @@ const Customers = () => {
                 </Tabs>
               </div>
 
-              {/* Sheet Footer Actions */}
-              <div className="p-8 bg-white border-t border-slate-100 flex justify-between items-center relative z-20">
-                 <div className="flex items-center gap-6">
-                    <div>
-                       <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">ACCOUNT STATUS</p>
-                       <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
-                          <span className="text-sm font-black text-slate-900">HEALTHY</span>
-                       </div>
-                    </div>
-                    <div>
-                       <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">LOYALTY</p>
-                       <p className="text-sm font-black text-primary italic">2.4 YEARS</p>
-                    </div>
-                 </div>
-                 <button className="px-10 py-4 bg-slate-900 text-white rounded-2xl font-black text-xs tracking-widest shadow-xl shadow-slate-200 hover:scale-[1.02] active:scale-[0.98] transition-all">
-                    GENERATE AUDIT REPORT
-                 </button>
-              </div>
             </>
           )}
         </SheetContent>

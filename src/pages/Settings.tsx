@@ -4,7 +4,6 @@ import TopBar from "@/components/TopBar";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useAuth } from "@/contexts/AuthContext";
-import { profileApi } from "@/api/profile";
 import { authApi } from "@/api/auth";
 import heroPrinting from "@/assets/hero-printing.jpg";
 import { AlertCircle } from "lucide-react";
@@ -17,30 +16,48 @@ const Settings = () => {
   const [phone, setPhone] = useState("");
   const [shippingAddress, setShippingAddress] = useState("");
   const [profileSaved, setProfileSaved] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordSaved, setPasswordSaved] = useState(false);
   const [passwordError, setPasswordError] = useState("");
+  const [passwordSubmitting, setPasswordSubmitting] = useState(false);
 
   useEffect(() => {
     if (!user) return;
-    const profile = profileApi.getOrCreateProfile(user.id, { name: user.name, email: user.email });
-    setName(profile.name);
-    setEmail(profile.email);
-    setPhone(profile.phone);
-    setShippingAddress(profile.shippingAddress);
+    let cancelled = false;
+    setProfileLoading(true);
+    setProfileError("");
+    authApi.getProfile().then((profile) => {
+      if (cancelled || !profile) return;
+      setName(profile.fullname ?? "");
+      setEmail(profile.email);
+      setPhone(profile.phone ?? "");
+      setShippingAddress(profile.address ?? "");
+    }).catch(() => {
+      if (!cancelled) setProfileError("Failed to load profile.");
+    }).finally(() => {
+      if (!cancelled) setProfileLoading(false);
+    });
+    return () => { cancelled = true; };
   }, [user]);
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    profileApi.updateProfile(user.id, { name, email, phone, shippingAddress });
-    setProfileSaved(true);
-    setTimeout(() => setProfileSaved(false), 3000);
+    setProfileError("");
+    const result = await authApi.updateProfile({ fullname: name, address: shippingAddress });
+    if (result.success) {
+      setProfileSaved(true);
+      setTimeout(() => setProfileSaved(false), 3000);
+    } else {
+      setProfileError(result.error ?? "Failed to save profile.");
+    }
   };
 
-  const handleChangePassword = (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordError("");
     setPasswordSaved(false);
@@ -49,15 +66,20 @@ const Settings = () => {
       return;
     }
     if (!user) return;
-    const result = authApi.changePassword(user.id, currentPassword, newPassword);
-    if (result.success) {
-      setPasswordSaved(true);
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      setTimeout(() => setPasswordSaved(false), 3000);
-    } else {
-      setPasswordError(result.error ?? "Failed to change password.");
+    setPasswordSubmitting(true);
+    try {
+      const result = await authApi.changePassword(currentPassword, newPassword, confirmPassword);
+      if (result.success) {
+        setPasswordSaved(true);
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+        setTimeout(() => setPasswordSaved(false), 3000);
+      } else {
+        setPasswordError(result.error ?? "Failed to change password.");
+      }
+    } finally {
+      setPasswordSubmitting(false);
     }
   };
 
@@ -115,8 +137,8 @@ const Settings = () => {
               <input
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-[#F5F7F9] border-none py-3 px-4 rounded-lg text-sm focus:ring-1 focus:ring-accent"
+                readOnly
+                className="w-full bg-[#F5F7F9] border-none py-3 px-4 rounded-lg text-sm text-muted-foreground"
               />
             </div>
             <div>
@@ -124,9 +146,8 @@ const Settings = () => {
               <input
                 type="tel"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="Optional"
-                className="w-full bg-[#F5F7F9] border-none py-3 px-4 rounded-lg text-sm focus:ring-1 focus:ring-accent"
+                readOnly
+                className="w-full bg-[#F5F7F9] border-none py-3 px-4 rounded-lg text-sm text-muted-foreground"
               />
             </div>
             <div>
@@ -141,10 +162,12 @@ const Settings = () => {
             </div>
             <button
               type="submit"
-              className="bg-accent text-white px-6 py-2 rounded-lg font-bold text-sm hover:bg-accent/90"
+              disabled={profileLoading}
+              className="bg-accent text-white px-6 py-2 rounded-lg font-bold text-sm hover:bg-accent/90 disabled:opacity-70"
             >
-              {t("pages.settings.saveProfile")}
+              {profileLoading ? t("common.loading") : t("pages.settings.saveProfile")}
             </button>
+            {profileError && <p className="text-sm text-destructive font-medium">{profileError}</p>}
             {profileSaved && <p className="text-sm text-green-600 font-medium">{t("pages.settings.profileSaved")}</p>}
             </form>
 
@@ -182,9 +205,10 @@ const Settings = () => {
             {passwordSaved && <p className="text-sm text-green-600 font-medium">{t("pages.settings.passwordUpdated")}</p>}
             <button
               type="submit"
-              className="bg-accent text-white px-6 py-2 rounded-lg font-bold text-sm hover:bg-accent/90"
+              disabled={passwordSubmitting}
+              className="bg-accent text-white px-6 py-2 rounded-lg font-bold text-sm hover:bg-accent/90 disabled:opacity-70"
             >
-              {t("pages.settings.updatePassword")}
+              {passwordSubmitting ? t("common.loading") : t("pages.settings.updatePassword")}
             </button>
             </form>
           </div>

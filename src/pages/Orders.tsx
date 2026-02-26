@@ -1,10 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import TopBar from "@/components/TopBar";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useAuth } from "@/contexts/AuthContext";
+import { orderApi } from "@/api/orderApi";
 import { ordersApi } from "@/api/orders";
 import type { OrderStatus } from "@/types/order";
 import heroPrinting from "@/assets/hero-printing.jpg";
@@ -14,23 +15,42 @@ const Orders = () => {
   const { t } = useTranslation();
   const { user } = useAuth();
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "ALL">("ALL");
+  const [orders, setOrders] = useState<import("@/types/order").Order[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const STATUS_OPTIONS: { value: OrderStatus | "ALL"; labelKey: string }[] = [
     { value: "ALL", labelKey: "all" },
     { value: "SUBMITTED", labelKey: "Submitted" },
-    { value: "INVOICE_PENDING", labelKey: "Invoice pending" },
-    { value: "INVOICED", labelKey: "Invoiced" },
-    { value: "PAYMENT_PENDING", labelKey: "Payment pending" },
-    { value: "PAID", labelKey: "Paid" },
     { value: "IN_PRODUCTION", labelKey: "In production" },
     { value: "READY", labelKey: "Ready" },
-    { value: "COMPLETED", labelKey: "Completed" },
+    { value: "PAID", labelKey: "Paid" },
     { value: "CANCELLED", labelKey: "Cancelled" },
   ];
 
-  const orders = useMemo(() => {
-    if (!user) return [];
-    return ordersApi.getOrdersByUserId(user.id);
+  useEffect(() => {
+    if (!user) {
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      orderApi.listOrders(),
+      Promise.resolve(ordersApi.getOrdersByUserId(user.id)),
+    ]).then(([apiList, localList]) => {
+      if (cancelled) return;
+      const byId = new Map<string, import("@/types/order").Order>();
+      apiList.forEach((o) => byId.set(o.id, o));
+      localList.forEach((o) => { if (!byId.has(o.id)) byId.set(o.id, o); });
+      const merged = [...byId.values()].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      setOrders(merged);
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
   }, [user]);
 
   const filteredOrders = useMemo(() => {
@@ -86,7 +106,11 @@ const Orders = () => {
             </div>
           </div>
 
-          {filteredOrders.length === 0 ? (
+          {loading ? (
+            <div className="text-center py-20 bg-white rounded-xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-gray-100">
+              <p className="text-muted-foreground text-lg">{t("common.loading")}</p>
+            </div>
+          ) : filteredOrders.length === 0 ? (
             <div className="text-center py-20 bg-white rounded-xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-gray-100">
               <p className="text-muted-foreground text-lg mb-4">
                 {orders.length === 0 ? t("pages.orders.noOrders") : t("pages.orders.noMatch")}

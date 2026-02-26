@@ -1,27 +1,91 @@
+import { useState, useEffect } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import TopBar from "@/components/TopBar";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useAuth } from "@/contexts/AuthContext";
+import { orderApi } from "@/api/orderApi";
 import { ordersApi } from "@/api/orders";
+import type { Order } from "@/types/order";
 import heroPrinting from "@/assets/hero-printing.jpg";
-import { RefreshCcw } from "lucide-react";
+import { RefreshCcw, Upload } from "lucide-react";
 
 const OrderDetail = () => {
   const { t } = useTranslation();
   const { orderId } = useParams<{ orderId: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [order, setOrder] = useState<Order | null | undefined>(undefined);
+  const [paymentFile, setPaymentFile] = useState<File | null>(null);
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
 
-  const order = orderId ? ordersApi.getOrderById(orderId) : null;
+  useEffect(() => {
+    if (!orderId) {
+      setOrder(null);
+      return;
+    }
+    let cancelled = false;
+    orderApi.getOrder(orderId).then((o) => {
+      if (!cancelled) {
+        if (o) {
+          setOrder(o);
+          return;
+        }
+        // Fallback: order may have been created locally (e.g. ord-xxx) and only exists in localStorage
+        const local = ordersApi.getOrderById(orderId);
+        setOrder(local ?? null);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [orderId]);
+
   const isOwner = user && order && order.userId === user.id;
+  const needsPayment =
+    order &&
+    order.items[0]?.fabricChoice.fabricSource === "factory" &&
+    !order.paymentMethod &&
+    !order.paymentProofFileName;
 
   const handleRepeatOrder = () => {
-    if (!orderId || !user || !order || order.userId !== user.id) return;
-    const newOrder = ordersApi.repeatOrder(orderId, user.id, user.customerType);
-    if (newOrder) navigate(`/orders/${newOrder.id}`);
+    navigate("/shop", { state: { repeatOrderId: orderId } });
   };
+
+  const handleSubmitPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!orderId || !order || !needsPayment) return;
+    if (!paymentFile) {
+      setPaymentError("Please select a payment proof file.");
+      return;
+    }
+    setPaymentError("");
+    setPaymentSubmitting(true);
+    try {
+      await orderApi.createPayment(orderId, "instant_pay", paymentFile);
+      const updated = await orderApi.getOrder(orderId);
+      if (updated) setOrder(updated);
+    } catch (err: unknown) {
+      setPaymentError(err && typeof err === "object" && "message" in err ? String((err as { message: string }).message) : "Failed to submit payment.");
+    } finally {
+      setPaymentSubmitting(false);
+    }
+  };
+
+  if (order === undefined) {
+    return (
+      <div className="min-h-screen bg-white">
+        <TopBar />
+        <Navbar />
+        <section className="py-24 px-4">
+          <div className="container mx-auto text-center">
+            <p className="text-muted-foreground">{t("common.loading")}</p>
+          </div>
+        </section>
+        <Footer />
+      </div>
+    );
+  }
 
   if (!orderId || !order) {
     return (
@@ -93,7 +157,14 @@ const OrderDetail = () => {
             <div className="p-4 border-2 border-border rounded-lg">
               <h2 className="font-heading text-lg font-black text-primary mb-3">{t("pages.orderDetail.orderDetails")}</h2>
               <p className="text-sm text-muted-foreground">Design: {item.designChoice.source}</p>
-              <p className="text-sm text-muted-foreground">Fabric: {item.fabricChoice.fabricType}, {item.fabricChoice.fabricSource}</p>
+              <p className="text-sm text-muted-foreground">
+                Fabric: {item.fabricChoice.fabricType},{" "}
+                {item.fabricChoice.fabricSource === "factory"
+                  ? t("pages.shop.factoryProvides")
+                  : item.fabricChoice.fabricSource === "customer"
+                    ? t("pages.shop.iProvide")
+                    : t("pages.shop.notSure")}
+              </p>
               <p className="text-sm text-muted-foreground">Quantity: {item.quantity}</p>
               {item.notes && <p className="text-sm text-muted-foreground">Notes: {item.notes}</p>}
               <p className="font-bold text-primary mt-2">Unit: {item.unitPrice} EGP · Total: {item.totalPrice} EGP</p>
@@ -113,11 +184,36 @@ const OrderDetail = () => {
           {/* Payment */}
           <div className="p-4 border-2 border-border rounded-lg">
             <h2 className="font-heading text-lg font-black text-primary mb-2">{t("pages.orderDetail.payment")}</h2>
-            <p className="text-sm text-muted-foreground">{t("pages.orderDetail.method")}: {order.paymentMethod ?? "—"}</p>
-            {order.paymentProofFileName && (
-              <p className="text-sm text-muted-foreground">{t("pages.orderDetail.proof")}: {order.paymentProofFileName}</p>
+            {needsPayment ? (
+              <form onSubmit={handleSubmitPayment} className="space-y-3">
+                <p className="text-sm text-muted-foreground">{t("pages.orderDetail.total")}: {order.totalAmount} EGP</p>
+                <label className="block text-sm font-medium text-primary">
+                  {t("pages.orderDetail.uploadProof")}
+                </label>
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={(e) => setPaymentFile(e.target.files?.[0] ?? null)}
+                  className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-accent file:text-white"
+                />
+                {paymentError && <p className="text-sm text-destructive">{paymentError}</p>}
+                <button
+                  type="submit"
+                  disabled={paymentSubmitting || !paymentFile}
+                  className="inline-flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-accent/90 disabled:opacity-70"
+                >
+                  <Upload className="h-4 w-4" /> {paymentSubmitting ? t("common.loading") : t("pages.orderDetail.submitPayment")}
+                </button>
+              </form>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">{t("pages.orderDetail.method")}: {order.paymentMethod ?? "—"}</p>
+                {order.paymentProofFileName && (
+                  <p className="text-sm text-muted-foreground">{t("pages.orderDetail.proof")}: {order.paymentProofFileName}</p>
+                )}
+                <p className="font-bold text-primary mt-2">{t("pages.orderDetail.total")}: {order.totalAmount} EGP</p>
+              </>
             )}
-            <p className="font-bold text-primary mt-2">{t("pages.orderDetail.total")}: {order.totalAmount} EGP</p>
           </div>
 
           <div className="flex flex-wrap gap-4">

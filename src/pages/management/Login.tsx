@@ -1,17 +1,29 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Lock, User, ShieldCheck, Eye, EyeOff, ArrowRight } from "lucide-react";
+import { adminAuthApi } from "@/api/adminAuth";
 
 const ManagementLogin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState("admin");
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // In a real app, we would authenticate here and set the role in context/localStorage
-    localStorage.setItem("userRole", role);
-    navigate("/management");
+    setError("");
+    setLoading(true);
+    const result = await adminAuthApi.login(identifier.trim(), password);
+    setLoading(false);
+    if (result.success) {
+      localStorage.setItem("userRole", role);
+      navigate("/management");
+    } else {
+      setError(result.error);
+    }
   };
 
   return (
@@ -63,6 +75,9 @@ const ManagementLogin = () => {
               </div>
             </div>
 
+            {error && (
+              <p className="text-sm font-bold text-red-600 bg-red-50 px-4 py-2 rounded-xl">{error}</p>
+            )}
             <div className="space-y-4">
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
@@ -70,7 +85,9 @@ const ManagementLogin = () => {
                 </div>
                 <input
                   type="text"
-                  placeholder="Username"
+                  placeholder="Email or phone (e.g. admin)"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
                   className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl text-slate-900 text-sm font-medium focus:ring-2 focus:ring-primary/20 outline-none transition-all placeholder:text-slate-400"
                   required
                 />
@@ -83,6 +100,8 @@ const ManagementLogin = () => {
                 <input
                   type={showPassword ? "text" : "password"}
                   placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   className="w-full pl-12 pr-12 py-4 bg-slate-50 border-none rounded-2xl text-slate-900 text-sm font-medium focus:ring-2 focus:ring-primary/20 outline-none transition-all placeholder:text-slate-400"
                   required
                 />
@@ -108,9 +127,10 @@ const ManagementLogin = () => {
 
             <button
               type="submit"
-              className="w-full bg-primary text-white py-4 rounded-2xl font-black text-sm tracking-widest flex items-center justify-center gap-3 shadow-xl shadow-primary/25 hover:scale-[1.02] active:scale-[0.98] transition-all group"
+              disabled={loading}
+              className="w-full bg-primary text-white py-4 rounded-2xl font-black text-sm tracking-widest flex items-center justify-center gap-3 shadow-xl shadow-primary/25 hover:scale-[1.02] active:scale-[0.98] transition-all group disabled:opacity-70"
             >
-              AUTHENTICATE
+              {loading ? "Signing in…" : "AUTHENTICATE"}
               <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
             </button>
           </form>

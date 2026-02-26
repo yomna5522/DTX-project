@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { adminAuthApi } from "@/api/adminAuth";
 import { 
   LayoutDashboard, 
   ShoppingBag, 
@@ -56,9 +57,16 @@ const SidebarItem = ({ icon: Icon, label, href, active, onBeforeNavigate }: Side
 
 const ManagementLayout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [isMobileOpen, setIsMobileOpen] = React.useState(false);
   const sidebarNavRef = useRef<HTMLElement>(null);
   const savedScrollTop = useRef(0);
+
+  const handleLogout = () => {
+    adminAuthApi.logout();
+    setIsMobileOpen(false);
+    navigate("/management/login");
+  };
 
   useEffect(() => {
     const el = sidebarNavRef.current;
@@ -98,8 +106,6 @@ const ManagementLayout = ({ children }: { children: React.ReactNode }) => {
         { icon: Layers, label: "Fabric Inventory", href: "/management/fabric-inventory" },
         { icon: Palette, label: "Design Library", href: "/management/design-library" },
         { icon: Cpu, label: "Production Forge", href: "/management/production" },
-        { icon: FileText, label: "Templates", href: "/management/production/templates" },
-        { icon: Layers, label: "Products Catalog", href: "/management/products" },
       ]
     },
     {
@@ -149,7 +155,11 @@ const ManagementLayout = ({ children }: { children: React.ReactNode }) => {
       </nav>
 
       <div className="p-4 border-t border-slate-100">
-        <button className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600 transition-all duration-200 w-full">
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600 transition-all duration-200 w-full"
+        >
           <LogOut size={20} />
           <span className="font-medium">Logout</span>
         </button>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import ManagementLayout from "@/components/management/ManagementLayout";
 import { 
   FileText, 
@@ -18,6 +18,7 @@ import {
   LayoutGrid,
   Pencil,
   Save,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { 
@@ -39,6 +40,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { billingApi } from "@/api/billing";
 import { productionApi } from "@/api/production";
+import { adminBillingApi } from "@/api/adminBillingApi";
+import { adminProductionApi } from "@/api/adminProductionApi";
+import { adminAuthApi } from "@/api/adminAuth";
 import { downloadInvoicePdf } from "@/services/invoicePdf";
 import type { InvoiceDocument, InvoiceLineItem, InvoiceDocumentStatus } from "@/types/billing";
 import logoImage from "@/assets/Logo.png";
@@ -66,13 +70,113 @@ const Invoices = () => {
   // Delete
   const [deleteTarget, setDeleteTarget] = useState<InvoiceDocument | null>(null);
 
-  // Data
-  const allInvoices = useMemo(() => billingApi.getAllInvoices(), [refresh]);
-  const customers = useMemo(() => productionApi.getAllCustomerEntities(), [refresh]);
+  const isBackendMode = Boolean(adminAuthApi.getSession());
+  const [allInvoices, setAllInvoices] = useState<InvoiceDocument[]>([]);
+  const [customers, setCustomers] = useState(() => (isBackendMode ? [] : productionApi.getAllCustomerEntities()));
+  const [invoicesLoading, setInvoicesLoading] = useState(true);
+  const [approvedRunsCount, setApprovedRunsCount] = useState(0);
+  const [approvedRunsForDraft, setApprovedRunsForDraft] = useState<{ id: string; design_ref: string; fabric: string; meters_printed: number }[]>([]);
 
-  // Draft preview (live as user changes params)
+  const refetch = useCallback(() => setRefresh((r) => r + 1), []);
+
+  // Sort so "Web orders" appears last; real customer names first
+  const sortedCustomers = useMemo(() => {
+    const web = (c: { displayName?: string }) =>
+      (c.displayName ?? "").trim().toLowerCase() === "web orders";
+    return [...customers].sort((a, b) => (web(a) ? 1 : web(b) ? -1 : 0));
+  }, [customers]);
+
+  useEffect(() => {
+    if (!isBackendMode) {
+      setAllInvoices(billingApi.getAllInvoices());
+      setCustomers(productionApi.getAllCustomerEntities());
+      setApprovedRunsCount(productionApi.getRunsByStatus("APPROVED").length);
+      setInvoicesLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setInvoicesLoading(true);
+    Promise.all([
+      adminBillingApi.getInvoices(),
+      adminProductionApi.getCustomers(),
+      adminProductionApi.getRuns("APPROVED").then((runs) => runs.length),
+    ])
+      .then(([invs, custs, count]) => {
+        if (!cancelled) {
+          setAllInvoices(invs);
+          setCustomers(custs);
+          setApprovedRunsCount(count);
+        }
+      })
+      .catch(() => { if (!cancelled) setAllInvoices([]); })
+      .finally(() => { if (!cancelled) setInvoicesLoading(false); });
+    return () => { cancelled = true; };
+  }, [isBackendMode, refresh]);
+
+  // Refetch when user returns to this tab (e.g. after approving in Production Forge)
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "visible" && isBackendMode) refetch();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [isBackendMode, refetch]);
+
+  useEffect(() => {
+    if (!isBackendMode || !createCustomer || !createFrom || !createTo) {
+      setApprovedRunsForDraft([]);
+      return;
+    }
+    let cancelled = false;
+    adminBillingApi.getApprovedRuns({
+      customerEntityId: createCustomer,
+      from: createFrom,
+      to: createTo,
+    }).then((runs) => {
+      if (!cancelled) setApprovedRunsForDraft(runs);
+    }).catch(() => { if (!cancelled) setApprovedRunsForDraft([]); });
+    return () => { cancelled = true; };
+  }, [isBackendMode, createCustomer, createFrom, createTo, refresh]);
+
   const draft = useMemo(() => {
     if (!createCustomer || !createFrom || !createTo) return null;
+    if (isBackendMode) {
+      const groups = new Map<string, { designRef: string; fabric: string; meters: number; runIds: string[] }>();
+      for (const r of approvedRunsForDraft) {
+        const key = `${r.design_ref}|||${r.fabric}`;
+        const g = groups.get(key);
+        if (g) {
+          g.meters += r.meters_printed;
+          g.runIds.push(r.id);
+        } else groups.set(key, { designRef: r.design_ref, fabric: r.fabric, meters: r.meters_printed, runIds: [r.id] });
+      }
+      const lines: InvoiceLineItem[] = [];
+      for (const g of groups.values()) {
+        const price = 80;
+        lines.push({
+          designRef: g.designRef,
+          fabric: g.fabric,
+          totalMeters: g.meters,
+          pricePerMeter: price,
+          lineTotal: g.meters * price,
+          productionRunIds: g.runIds,
+        });
+      }
+      const subtotal = lines.reduce((s, l) => s + l.lineTotal, 0);
+      const discountAmount = subtotal * (createDiscount / 100);
+      const afterDiscount = subtotal - discountAmount;
+      const vatAmount = afterDiscount * (createVat / 100);
+      return {
+        lines,
+        subtotal,
+        discountPct: createDiscount,
+        discountAmount,
+        afterDiscount,
+        vatPct: createVat,
+        vatAmount,
+        total: afterDiscount + vatAmount,
+      };
+    }
     return billingApi.buildDraft({
       customerEntityId: createCustomer,
       from: createFrom,
@@ -80,7 +184,7 @@ const Invoices = () => {
       discountPct: createDiscount,
       vatPct: createVat,
     });
-  }, [createCustomer, createFrom, createTo, createDiscount, createVat, refresh]);
+  }, [isBackendMode, createCustomer, createFrom, createTo, createDiscount, createVat, approvedRunsForDraft]);
 
   const filteredInvoices = useMemo(() => {
     if (!searchTerm) return allInvoices;
@@ -94,13 +198,18 @@ const Invoices = () => {
     );
   }, [allInvoices, searchTerm]);
 
-  // Stats
-  const totalReceivables = useMemo(() => billingApi.totalReceivables(), [refresh]);
-  const totalCollected = useMemo(() => billingApi.totalCollected(), [refresh]);
+  const totalReceivables = useMemo(() => {
+    if (isBackendMode) return allInvoices.filter((i) => i.status === "ISSUED").reduce((s, i) => s + i.total, 0);
+    return billingApi.totalReceivables();
+  }, [isBackendMode, allInvoices, refresh]);
+  const totalCollected = useMemo(() => {
+    if (isBackendMode) return allInvoices.filter((i) => i.status === "PAID").reduce((s, i) => s + i.total, 0);
+    return billingApi.totalCollected();
+  }, [isBackendMode, allInvoices, refresh]);
 
   // ── Handlers ──────────────────────────────────────────────
   const openCreate = () => {
-    setCreateCustomer(customers[0]?.id ?? "");
+    setCreateCustomer("");
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     setCreateFrom(monthStart.toISOString().split("T")[0]);
@@ -111,8 +220,29 @@ const Invoices = () => {
     setIsCreateOpen(true);
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!createCustomer || !draft || draft.lines.length === 0) return;
+    if (isBackendMode) {
+      try {
+        const runIds = draft.lines.flatMap((l) => l.productionRunIds);
+        const inv = await adminBillingApi.createInvoice({
+          customerEntityId: createCustomer,
+          periodStart: createFrom,
+          periodEnd: createTo,
+          runIds,
+          discountPct: createDiscount,
+          vatPct: createVat,
+          notes: createNotes || undefined,
+        });
+        setAllInvoices((prev) => [inv, ...prev]);
+        setIsCreateOpen(false);
+        setRefresh((r) => r + 1);
+        openPreview(inv);
+      } catch (e) {
+        console.error(e);
+      }
+      return;
+    }
     const inv = billingApi.createInvoice({
       customerEntityId: createCustomer,
       from: createFrom,
@@ -314,6 +444,18 @@ const Invoices = () => {
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
              </div>
+            {isBackendMode && (
+              <button
+                type="button"
+                onClick={refetch}
+                disabled={invoicesLoading}
+                className="p-4 rounded-[22px] border border-slate-200 bg-white font-black text-xs tracking-widest text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-all flex items-center gap-2 uppercase"
+                title="Refresh invoices and approved runs count"
+              >
+                <RefreshCw size={18} className={invoicesLoading ? "animate-spin" : ""} />
+                <span className="hidden lg:inline">Refresh</span>
+              </button>
+            )}
             <button
               onClick={openCreate}
               className="bg-primary text-white p-4 lg:px-8 rounded-[22px] font-black text-xs tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 uppercase whitespace-nowrap"
@@ -357,7 +499,7 @@ const Invoices = () => {
               Approved Runs (unbilled)
             </p>
             <h4 className="text-2xl font-black text-amber-600 tracking-tighter">
-              {productionApi.getRunsByStatus("APPROVED").length}
+              {approvedRunsCount}
             </h4>
            </div>
         </div>
@@ -498,7 +640,7 @@ const Invoices = () => {
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-bold bg-white"
                 >
                   <option value="">Select customer</option>
-                  {customers.map((c) => (
+                  {sortedCustomers.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.displayName}
                     </option>
@@ -668,8 +810,13 @@ const Invoices = () => {
                   No approved production runs in this range
                 </p>
                 <p className="text-[10px] text-slate-400 mt-1">
-                  Approve runs in the Production Log first, then generate an invoice.
+                  Approve runs in Production Forge first, then generate an invoice.
                 </p>
+                {isBackendMode && (
+                  <p className="text-[10px] text-amber-600 mt-2 font-medium">
+                    If you just approved runs, click Refresh on Billing Vault to load them.
+                  </p>
+                )}
               </div>
             ) : null}
           </div>

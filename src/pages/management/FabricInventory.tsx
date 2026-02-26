@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import ManagementLayout from "@/components/management/ManagementLayout";
-import { Package, Plus, Pencil, Trash, Layers, X } from "lucide-react";
+import { Package, Plus, Pencil, Trash, Layers, RefreshCw, UploadCloud } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import {
@@ -14,6 +14,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ordersApi } from "@/api/orders";
+import { adminAuthApi } from "@/api/adminAuth";
+import { adminFabricInventoryApi } from "@/api/adminFabricInventoryApi";
 import type { FactoryFabric, FabricType } from "@/types/order";
 
 const fabricTypeLabels: Record<FabricType, string> = {
@@ -22,20 +24,54 @@ const fabricTypeLabels: Record<FabricType, string> = {
 };
 
 const FabricInventory = () => {
+  const isBackendMode = Boolean(adminAuthApi.getSession());
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [fabrics, setFabrics] = useState<FactoryFabric[]>(() => ordersApi.getFactoryFabrics());
+  const [fabrics, setFabrics] = useState<FactoryFabric[]>(() =>
+    isBackendMode ? [] : ordersApi.getFactoryFabrics()
+  );
+  const [loading, setLoading] = useState(isBackendMode);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState<FactoryFabric | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [form, setForm] = useState<Partial<FactoryFabric> & { name: string; type: FabricType; pricePerMeter: number; minimumQuantity: number }>({
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<Partial<FactoryFabric> & { name: string; type: FabricType; pricePerMeter: number; minimumQuantity: number; imageUrl: string }>({
     name: "",
     type: "sublimation",
     pricePerMeter: 0,
     minimumQuantity: 1,
     availableMeters: undefined,
     description: "",
+    imageUrl: "",
   });
+  const [selectedFabricImage, setSelectedFabricImage] = useState<File | null>(null);
+  const fabricImageInputRef = React.useRef<HTMLInputElement>(null);
+  const [imagePreviewError, setImagePreviewError] = useState(false);
 
-  const refresh = () => setFabrics(ordersApi.getFactoryFabrics());
+  const refetch = useCallback(async () => {
+    if (!isBackendMode) return;
+    setLoadError(null);
+    setLoading(true);
+    try {
+      const list = await adminFabricInventoryApi.getList();
+      setFabrics(list);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Failed to load fabric inventory");
+      setFabrics([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [isBackendMode]);
+
+  useEffect(() => {
+    if (!isBackendMode) return;
+    refetch();
+  }, [isBackendMode, refetch]);
+
+  const refresh = () => {
+    if (isBackendMode) refetch();
+    else setFabrics(ordersApi.getFactoryFabrics());
+  };
 
   const openCreate = () => {
     setForm({
@@ -45,9 +81,13 @@ const FabricInventory = () => {
       minimumQuantity: 1,
       availableMeters: undefined,
       description: "",
+      imageUrl: "",
     });
+    setSelectedFabricImage(null);
+    setImagePreviewError(false);
     setIsCreateOpen(true);
     setEditing(null);
+    fabricImageInputRef.current && (fabricImageInputRef.current.value = "");
   };
 
   const openEdit = (f: FactoryFabric) => {
@@ -59,30 +99,79 @@ const FabricInventory = () => {
       minimumQuantity: f.minimumQuantity,
       availableMeters: f.availableMeters,
       description: f.description ?? "",
+      imageUrl: f.imageUrl ?? "",
     });
+    setSelectedFabricImage(null);
+    setImagePreviewError(false);
     setEditing(f);
     setIsCreateOpen(false);
+    fabricImageInputRef.current && (fabricImageInputRef.current.value = "");
   };
 
   const closeSheet = () => {
     setEditing(null);
     setIsCreateOpen(false);
+    setFormError(null);
+    setSelectedFabricImage(null);
+    setForm((f) => ({ ...f, imageUrl: "" }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    setFormError(null);
+    const nameTrimmed = form.name.trim();
+    if (!nameTrimmed) {
+      setFormError("Fabric name is required.");
+      return;
+    }
+    if (form.pricePerMeter == null || form.pricePerMeter < 0) {
+      setFormError("Price per meter must be 0 or greater.");
+      return;
+    }
+    if (isBackendMode) {
+      setSaving(true);
+      try {
+        if (editing) {
+          await adminFabricInventoryApi.update(editing.id, {
+            name: nameTrimmed,
+            type: form.type,
+            pricePerMeter: form.pricePerMeter,
+            minimumQuantity: form.minimumQuantity ?? 1,
+            availableMeters: form.availableMeters,
+            description: form.description || undefined,
+            ...(selectedFabricImage && { image: selectedFabricImage }),
+          });
+        } else {
+          await adminFabricInventoryApi.create({
+            name: nameTrimmed,
+            type: form.type,
+            pricePerMeter: form.pricePerMeter,
+            minimumQuantity: form.minimumQuantity ?? 1,
+            availableMeters: form.availableMeters,
+            description: form.description || undefined,
+            ...(selectedFabricImage && { image: selectedFabricImage }),
+          });
+        }
+        await refetch();
+        closeSheet();
+      } catch (e) {
+        setFormError(e instanceof Error ? e.message : "Save failed");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
     if (editing) {
       ordersApi.updateFactoryFabric(editing.id, {
-        name: form.name,
+        name: nameTrimmed,
         type: form.type,
         pricePerMeter: form.pricePerMeter,
         minimumQuantity: form.minimumQuantity,
         availableMeters: form.availableMeters,
         description: form.description || undefined,
       });
-    } else if (isCreateOpen) {
-      if (!form.name || form.pricePerMeter < 0) return;
+    } else {
       ordersApi.addFactoryFabric({
-        name: form.name,
+        name: nameTrimmed,
         type: form.type,
         pricePerMeter: form.pricePerMeter,
         minimumQuantity: form.minimumQuantity ?? 1,
@@ -96,8 +185,19 @@ const FabricInventory = () => {
 
   const handleDeleteClick = (id: string) => setDeleteConfirmId(id);
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!deleteConfirmId) return;
+    if (isBackendMode) {
+      try {
+        await adminFabricInventoryApi.delete(deleteConfirmId);
+        refresh();
+        closeSheet();
+        setDeleteConfirmId(null);
+      } catch {
+        // keep dialog open
+      }
+      return;
+    }
     ordersApi.deleteFactoryFabric(deleteConfirmId);
     refresh();
     closeSheet();
@@ -116,14 +216,34 @@ const FabricInventory = () => {
             </h1>
             <p className="text-slate-400 text-sm font-medium italic mt-1">Factory fabrics: type, available meters, price per meter, minimum quantity.</p>
           </div>
-          <button
-            onClick={openCreate}
-            className="flex items-center gap-2 px-6 py-4 bg-primary text-white rounded-[22px] font-black text-xs tracking-widest uppercase shadow-xl shadow-primary/20 hover:scale-[1.02] transition-all"
-          >
-            <Plus size={20} /> Add fabric
-          </button>
+          <div className="flex items-center gap-2">
+            {isBackendMode && (
+              <button
+                onClick={refetch}
+                disabled={loading}
+                className="flex items-center gap-2 px-4 py-3 rounded-xl border border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                <RefreshCw size={16} className={loading ? "animate-spin" : ""} /> Refresh
+              </button>
+            )}
+            <button
+              onClick={openCreate}
+              className="flex items-center gap-2 px-6 py-4 bg-primary text-white rounded-[22px] font-black text-xs tracking-widest uppercase shadow-xl shadow-primary/20 hover:scale-[1.02] transition-all"
+            >
+              <Plus size={20} /> Add fabric
+            </button>
+          </div>
         </div>
+        {isBackendMode && loadError && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {loadError}
+          </div>
+        )}
+        {isBackendMode && loading && fabrics.length === 0 && (
+          <div className="py-12 text-center text-slate-500">Loading fabric inventory…</div>
+        )}
 
+        {!isBackendMode || !loading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {fabrics.map((f) => (
             <div
@@ -131,8 +251,12 @@ const FabricInventory = () => {
               className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm hover:border-primary/20 transition-all group"
             >
               <div className="flex items-start justify-between gap-2">
-                <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-primary">
-                  <Layers size={24} />
+                <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-primary overflow-hidden flex-shrink-0">
+                  {f.imageUrl ? (
+                    <img src={f.imageUrl} alt={f.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <Layers size={24} />
+                  )}
                 </div>
                 <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button onClick={() => openEdit(f)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-500">
@@ -156,8 +280,9 @@ const FabricInventory = () => {
             </div>
           ))}
         </div>
+        ) : null}
 
-        {fabrics.length === 0 && (
+        {!loading && fabrics.length === 0 && (
           <div className="py-24 text-center text-slate-400">
             <Package size={48} className="mx-auto mb-4 opacity-50" />
             <p className="font-bold uppercase tracking-widest">No factory fabrics yet</p>
@@ -175,6 +300,70 @@ const FabricInventory = () => {
             <SheetTitle className="uppercase tracking-tight">{editing ? "Edit fabric" : "Add fabric"}</SheetTitle>
           </SheetHeader>
           <div className="space-y-4 py-6">
+            {formError && (
+              <p className="text-sm text-red-600 font-medium rounded-lg bg-red-50 border border-red-200 px-3 py-2">{formError}</p>
+            )}
+            {isBackendMode && (
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Fabric image (optional)</label>
+                <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 overflow-hidden">
+                  {form.imageUrl ? (
+                    <div className="relative aspect-video max-h-36 w-full bg-slate-100">
+                      {!imagePreviewError ? (
+                        <img
+                          src={form.imageUrl}
+                          alt="Fabric preview"
+                          className="w-full h-full object-contain"
+                          onError={() => setImagePreviewError(true)}
+                        />
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center bg-slate-100 text-slate-400 text-sm">Invalid image</div>
+                      )}
+                      <div className="absolute bottom-2 right-2 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => fabricImageInputRef.current?.click()}
+                          className="px-2 py-1 rounded-lg bg-white/90 text-xs font-bold text-slate-600 shadow"
+                        >
+                          Change
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setForm((f) => ({ ...f, imageUrl: "" })); setSelectedFabricImage(null); setImagePreviewError(false); }}
+                          className="px-2 py-1 rounded-lg bg-white/90 text-xs font-bold text-red-600 shadow"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => fabricImageInputRef.current?.click()}
+                      className="aspect-video flex flex-col items-center justify-center gap-2 text-slate-400 cursor-pointer hover:bg-slate-100/50"
+                    >
+                      <UploadCloud size={32} className="opacity-60" />
+                      <span className="text-xs font-bold">Upload image</span>
+                    </div>
+                  )}
+                  <input
+                    ref={fabricImageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file && file.type.startsWith("image/")) {
+                        setSelectedFabricImage(file);
+                        const reader = new FileReader();
+                        reader.onload = () => setForm((f) => ({ ...f, imageUrl: reader.result as string }));
+                        reader.readAsDataURL(file);
+                        setImagePreviewError(false);
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            )}
             <div>
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Name</label>
               <input
@@ -241,15 +430,15 @@ const FabricInventory = () => {
           </div>
           <SheetFooter className="flex gap-2">
             {editing && (
-              <button onClick={() => handleDeleteClick(editing.id)} className="px-4 py-3 rounded-xl border border-red-200 text-red-600 font-bold text-sm hover:bg-red-50">
+              <button type="button" onClick={() => handleDeleteClick(editing.id)} className="px-4 py-3 rounded-xl border border-red-200 text-red-600 font-bold text-sm hover:bg-red-50">
                 Delete
               </button>
             )}
-            <button onClick={closeSheet} className="px-4 py-3 rounded-xl border border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50">
+            <button type="button" onClick={closeSheet} disabled={saving} className="px-4 py-3 rounded-xl border border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50">
               Cancel
             </button>
-            <button onClick={handleSave} className="px-6 py-3 rounded-xl bg-primary text-white font-bold text-sm hover:opacity-90">
-              {editing ? "Save" : "Add"}
+            <button type="button" onClick={handleSave} disabled={saving} className="px-6 py-3 rounded-xl bg-primary text-white font-bold text-sm hover:opacity-90 disabled:opacity-70">
+              {saving ? (editing ? "Saving…" : "Adding…") : editing ? "Save" : "Add"}
             </button>
           </SheetFooter>
         </SheetContent>

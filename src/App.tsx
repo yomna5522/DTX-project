@@ -14,6 +14,7 @@ import Contact from "./pages/Contact";
 import Services from "./pages/Services";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import VerifyAccount from "./pages/VerifyAccount";
 
 // User-facing pages (from zeyad-br)
 import UserOrders from "./pages/Orders";
@@ -64,6 +65,7 @@ const App = () => {
             <Route path="/services" element={<Services />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/verify-account" element={<VerifyAccount />} />
             <Route path="/orders" element={<ProtectedRoute><UserOrders /></ProtectedRoute>} />
             <Route path="/orders/:orderId" element={<ProtectedRoute><OrderDetail /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><UserSettings /></ProtectedRoute>} />

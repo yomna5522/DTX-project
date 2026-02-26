@@ -8,6 +8,8 @@ import CTASection from "@/components/CTASection";
 import { Search, UploadCloud, RefreshCcw, ArrowRight, ArrowLeft, FileText, Package, HelpCircle, CheckCircle2, Image, File, Eye, Download, Palette } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { ordersApi } from "@/api/orders";
+import { orderApi } from "@/api/orderApi";
+import { API_BASE_URL } from "@/api/constants";
 import { userDesignsApi } from "@/api/userDesigns";
 import { PatternThumbnail } from "@/components/PatternThumbnail";
 import type { DesignChoice, FabricChoice, DesignSource, FabricType, FabricSource, PaymentMethod, OrderType } from "@/types/order";
@@ -55,10 +57,48 @@ const Shop = () => {
   const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
   const [submitError, setSubmitError] = useState("");
 
-  const presets = useMemo(
-    () => ordersApi.getPresetDesignsForCustomer(user?.id),
-    [user?.id]
-  );
+  const [apiFabricTypes, setApiFabricTypes] = useState<import("@/types/orderApi").FabricTypeItem[]>([]);
+  const [apiDesigns, setApiDesigns] = useState<import("@/types/orderApi").DesignItem[]>([]);
+  const [apiOrderTypes, setApiOrderTypes] = useState<import("@/types/orderApi").OrderTypeItem[]>([]);
+  const [apiFabricInventory, setApiFabricInventory] = useState<import("@/types/orderApi").FabricInventoryItem[]>([]);
+
+  // Load order-step options and all fabric inventory from backend (admin-added fabrics) on mount.
+  useEffect(() => {
+    orderApi.getFabricTypes().then(setApiFabricTypes).catch(() => {});
+    orderApi.getDesigns().then(setApiDesigns).catch(() => {});
+    orderApi.getOrderTypes().then(setApiOrderTypes).catch(() => {});
+    orderApi.getFabricInventory().then(setApiFabricInventory).catch(() => setApiFabricInventory([]));
+  }, []);
+
+  const fabricTypeIdForChoice = useMemo(() => {
+    if (!fabricChoice.fabricType || apiFabricTypes.length === 0) return undefined;
+    const want = fabricChoice.fabricType === "sublimation" ? "sublimation" : "natural";
+    const ft = apiFabricTypes.find((f) => f.name.toLowerCase().includes(want));
+    return ft?.id;
+  }, [fabricChoice.fabricType, apiFabricTypes]);
+
+  // Filter full API fabric list by selected fabric type for display (backend list loaded on mount).
+  const apiFabricInventoryForType = useMemo(() => {
+    if (!fabricChoice.fabricType || apiFabricInventory.length === 0) return [];
+    const want = fabricChoice.fabricType === "sublimation" ? "sublimation" : "natural";
+    return apiFabricInventory.filter(
+      (f) => !f.fabric_type || f.fabric_type.name.toLowerCase().includes(want)
+    );
+  }, [fabricChoice.fabricType, apiFabricInventory]);
+
+  const presets = useMemo(() => {
+    if (apiDesigns.length > 0) {
+      const base = API_BASE_URL.replace(/\/$/, "");
+      return apiDesigns.map((d) => ({
+        id: String(d.id),
+        name: d.name,
+        description: d.description ?? "",
+        imageUrl: d.file ? (d.file.startsWith("http") ? d.file : `${base.replace(/\/$/, "")}${d.file}`) : "",
+        basePricePerUnit: parseFloat(d.price),
+      }));
+    }
+    return ordersApi.getPresetDesignsForCustomer(user?.id);
+  }, [apiDesigns, user?.id]);
   const userOrders = useMemo(() => (user ? ordersApi.getOrdersByUserId(user.id) : []), [user]);
   const myLibraryDesigns = useMemo(() => (user ? userDesignsApi.getDesignsByUserId(user.id) : []), [user]);
   const factoryFabrics = useMemo(() => ordersApi.getFactoryFabrics(), []);
@@ -71,11 +111,43 @@ const Shop = () => {
     }
   }, [location.state, user, myLibraryDesigns.length]);
   
-  // Filter factory fabrics by selected fabric type
+  // Filter factory fabrics by selected fabric type; prefer API inventory when available (numeric ids for backend create)
   const availableFabrics = useMemo(() => {
     if (!fabricChoice.fabricType) return [];
+    if (apiFabricInventoryForType.length > 0) {
+      return apiFabricInventoryForType.map((f) => {
+        const minQ = f.min_quantity;
+        const minimumQuantity =
+          typeof minQ === "number" && minQ >= 0
+            ? minQ
+            : typeof minQ === "string"
+              ? parseInt(minQ, 10)
+              : 1;
+        const base = API_BASE_URL.replace(/\/$/, "");
+        const imageUrl = f.image
+          ? f.image.startsWith("http")
+            ? f.image
+            : `${base.replace(/\/$/, "")}${f.image.startsWith("/") ? f.image : `/media/${f.image}`}`
+          : undefined;
+        return {
+          id: String(f.id),
+          name: f.name,
+          type: fabricChoice.fabricType as "sublimation" | "natural",
+          pricePerMeter: parseFloat(String(f.price)),
+          minimumQuantity: Number.isNaN(minimumQuantity) ? 1 : minimumQuantity,
+          availableMeters: f.available_meter ? parseFloat(String(f.available_meter)) : undefined,
+          description: f.description ?? undefined,
+          imageUrl,
+        };
+      });
+    }
     return factoryFabrics.filter(f => f.type === fabricChoice.fabricType);
-  }, [factoryFabrics, fabricChoice.fabricType]);
+  }, [apiFabricInventoryForType, factoryFabrics, fabricChoice.fabricType]);
+
+  const selectedFactoryFabric = useMemo(
+    () => (factoryFabricId ? availableFabrics.find((f) => f.id === factoryFabricId) : null),
+    [availableFabrics, factoryFabricId]
+  );
 
   const resolvedDesignChoice: DesignChoice = useMemo(() => {
     if (designChoice.source === "existing" && designPresetId) return { source: "existing", presetId: designPresetId };
@@ -104,13 +176,15 @@ const Shop = () => {
     if (designChoice.source === "my_library" && !myLibraryDesignId) return 0;
     if (fabricChoice.fabricSource === "factory" && !factoryFabricId) return 0;
     if (!fabricChoice.fabricType || !fabricChoice.orderType || !fabricChoice.fabricSource) return 0;
+    if (fabricChoice.fabricSource === "factory" && selectedFactoryFabric) return selectedFactoryFabric.pricePerMeter;
     return ordersApi.computeUnitPrice(resolvedDesignChoice, resolvedFabricChoice as FabricChoice);
-  }, [resolvedDesignChoice, resolvedFabricChoice, designChoice.source, designPresetId, uploadedFiles, repeatOrderId, myLibraryDesignId, fabricChoice.fabricSource, factoryFabricId, fabricChoice.fabricType, fabricChoice.orderType]);
+  }, [resolvedDesignChoice, resolvedFabricChoice, designChoice.source, designPresetId, uploadedFiles, repeatOrderId, myLibraryDesignId, fabricChoice.fabricSource, factoryFabricId, fabricChoice.fabricType, fabricChoice.orderType, selectedFactoryFabric]);
 
   const minimumQuantity = useMemo(() => {
     if (!fabricChoice.fabricType || !fabricChoice.orderType || !fabricChoice.fabricSource) return 1;
+    if (fabricChoice.fabricSource === "factory" && selectedFactoryFabric) return selectedFactoryFabric.minimumQuantity;
     return ordersApi.getMinimumQuantity(resolvedFabricChoice as FabricChoice);
-  }, [resolvedFabricChoice, fabricChoice.fabricType, fabricChoice.orderType, fabricChoice.fabricSource]);
+  }, [resolvedFabricChoice, fabricChoice.fabricType, fabricChoice.orderType, fabricChoice.fabricSource, selectedFactoryFabric]);
 
   const totalPrice = unitPrice * quantity;
 
@@ -186,6 +260,50 @@ const Shop = () => {
       if (!fabricChoice.fabricType || !fabricChoice.orderType || !fabricChoice.fabricSource) {
         throw new Error(t("pages.shop.pleaseCompleteSelections"));
       }
+      const fabricSource = (resolvedFabricChoice as FabricChoice).fabricSource;
+      const backendFabricSource = fabricSource === "customer" ? "provide" : fabricSource === "factory" ? "factory_provide" : "not_sure";
+      const designIdFromApi = finalChoice.source === "existing" && finalChoice.presetId && apiDesigns.some((d) => String(d.id) === finalChoice.presetId)
+        ? Number(finalChoice.presetId)
+        : NaN;
+      const useBackendUpload =
+        finalChoice.source === "upload" &&
+        uploadedFiles.length > 0 &&
+        (backendFabricSource === "provide" || backendFabricSource === "not_sure");
+      const useBackendExisting =
+        finalChoice.source === "existing" &&
+        !isNaN(designIdFromApi) &&
+        (backendFabricSource === "provide" || backendFabricSource === "not_sure");
+      const canUseBackendQuotation = useBackendUpload || useBackendExisting;
+
+      if (canUseBackendQuotation) {
+        const wantFabricType = fabricChoice.fabricType === "sublimation" ? "sublimation" : "natural";
+        const resolvedFabricTypeId = apiFabricTypes.find((f) => f.name.toLowerCase().includes(wantFabricType))?.id;
+        const resolvedOrderTypeId = apiOrderTypes.find((ot) =>
+          ot.name.toLowerCase().includes(fabricChoice.orderType === "sample" ? "sample" : "order")
+        )?.id;
+        if (resolvedFabricTypeId == null || resolvedOrderTypeId == null) {
+          setSubmitError(
+            apiFabricTypes.length === 0
+              ? (t("pages.shop.fabricTypeNotConfigured") || "Fabric types are not configured.")
+              : apiOrderTypes.length === 0
+                ? (t("pages.shop.orderTypeNotConfigured") || "Order types are not configured.")
+                : (t("pages.shop.fabricTypeNotFound") || "Fabric or order type not found. Please refresh.")
+          );
+          return;
+        }
+        const payload: import("@/types/orderApi").CreateOrderRequest = {
+          order_type_id: resolvedOrderTypeId,
+          fabric_type_id: resolvedFabricTypeId,
+          fabric_source: backendFabricSource,
+          notes: notes || (fabricSource === "customer" ? customerNotes : fabricSource === "not_sure" ? notSureInquiry : "") || undefined,
+        };
+        if (useBackendUpload) payload.custom_design = uploadedFiles[0];
+        else if (useBackendExisting) payload.design_id = designIdFromApi;
+        const created = await orderApi.createOrder(payload);
+        navigate(`/orders/${created.id}`);
+        return;
+      }
+
       const requestQuantity = quantity || 1;
       const myLibDesign = finalChoice.source === "my_library" && finalChoice.myLibraryDesignId ? userDesignsApi.getDesignById(user.id, finalChoice.myLibraryDesignId) : undefined;
       const myLibSnapshot = myLibDesign?.imageDataUrl ? {
@@ -210,13 +328,36 @@ const Shop = () => {
       });
       navigate(`/orders/${order.id}`);
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : t("pages.shop.submitError"));
+      const msg = e && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string"
+        ? (e as { message: string }).message
+        : e instanceof Error ? e.message : t("pages.shop.submitError");
+      setSubmitError(msg);
     }
   };
 
   const handleSubmitOrder = async () => {
     setSubmitError("");
     if (!user) return;
+    // Validate design source
+    const designSourceComplete =
+      (designChoice.source === "existing" && designPresetId) ||
+      (designChoice.source === "upload" && uploadedFiles.length > 0) ||
+      (designChoice.source === "repeat" && repeatOrderId) ||
+      (designChoice.source === "my_library" && myLibraryDesignId);
+    if (!designSourceComplete) {
+      setSubmitError(t("pages.shop.pleaseSelectDesign") || "Please select or upload a design.");
+      return;
+    }
+    if (!fabricChoice.fabricType || !fabricChoice.orderType || !fabricChoice.fabricSource) {
+      setSubmitError(t("pages.shop.pleaseCompleteSelections"));
+      return;
+    }
+    if (fabricChoice.fabricSource === "factory" && (!factoryFabricId || quantity < minimumQuantity)) {
+      setSubmitError(
+        t("pages.shop.minimumOrder") + " " + minimumQuantity + " " + t("pages.shop.meters") + ". " + t("pages.shop.minimumOrderHint")
+      );
+      return;
+    }
     if (paymentMethod === "instapay" && !paymentProofFile) {
       setSubmitError(t("pages.shop.paymentProofRequired"));
       return;
@@ -232,9 +373,6 @@ const Shop = () => {
               ? { source: "my_library", myLibraryDesignId }
               : resolvedDesignChoice;
     try {
-      if (!fabricChoice.fabricType || !fabricChoice.orderType || !fabricChoice.fabricSource) {
-        throw new Error(t("pages.shop.pleaseCompleteSelections"));
-      }
       const myLibDesignOrder = finalChoice.source === "my_library" && finalChoice.myLibraryDesignId ? userDesignsApi.getDesignById(user.id, finalChoice.myLibraryDesignId) : undefined;
       const myLibSnapshotOrder = myLibDesignOrder?.imageDataUrl ? {
         name: myLibDesignOrder.name,
@@ -245,6 +383,91 @@ const Shop = () => {
         ...(myLibDesignOrder.tileSize != null && { tileSize: myLibDesignOrder.tileSize }),
       } : undefined;
       const uploadSnapshots = finalChoice.source === "upload" && uploadedFiles.length > 0 ? await readUploadsAsSnapshots() : undefined;
+      // Prefer backend when we have upload design and mappable options (provide/not_sure, or factory with numeric fabric id)
+      const fabricSource = (resolvedFabricChoice as FabricChoice).fabricSource;
+      const backendFabricSource = fabricSource === "customer" ? "provide" : fabricSource === "factory" ? "factory_provide" : "not_sure";
+      const factoryFabricIdNum = resolvedFabricChoice.factoryFabricId ? parseInt(resolvedFabricChoice.factoryFabricId, 10) : NaN;
+      const designIdFromApi = finalChoice.source === "existing" && finalChoice.presetId && apiDesigns.some((d) => String(d.id) === finalChoice.presetId)
+        ? Number(finalChoice.presetId)
+        : NaN;
+      const useBackendUpload =
+        finalChoice.source === "upload" &&
+        uploadedFiles.length > 0 &&
+        (backendFabricSource === "provide" ||
+          backendFabricSource === "not_sure" ||
+          (backendFabricSource === "factory_provide" && !isNaN(factoryFabricIdNum) && quantity >= 1));
+      const useBackendExisting =
+        finalChoice.source === "existing" &&
+        !isNaN(designIdFromApi) &&
+        (backendFabricSource === "provide" ||
+          backendFabricSource === "not_sure" ||
+          (backendFabricSource === "factory_provide" && !isNaN(factoryFabricIdNum) && quantity >= 1));
+      const canUseBackend = useBackendUpload || useBackendExisting;
+
+      if (canUseBackend) {
+        const wantFabricType = fabricChoice.fabricType === "sublimation" ? "sublimation" : "natural";
+        const resolvedFabricTypeId = apiFabricTypes.find((f) =>
+          f.name.toLowerCase().includes(wantFabricType)
+        )?.id;
+        if (resolvedFabricTypeId == null) {
+          setSubmitError(
+            apiFabricTypes.length === 0
+              ? t("pages.shop.fabricTypeNotConfigured") || "Fabric types are not configured. Please try again later."
+              : t("pages.shop.fabricTypeNotFound") || "Fabric type not found."
+          );
+          return;
+        }
+        const fabricTypeIdFromApi = resolvedFabricTypeId;
+        if (backendFabricSource === "factory_provide" && quantity < minimumQuantity) {
+          setSubmitError(
+            t("pages.shop.minimumOrder") + " " + minimumQuantity + " " + t("pages.shop.meters") + ". " + t("pages.shop.minimumOrderHint")
+          );
+          return;
+        }
+        const wantOrderType = fabricChoice.orderType === "sample" ? "sample" : "order";
+        const resolvedOrderTypeId = apiOrderTypes.find((ot) =>
+          ot.name.toLowerCase().includes(wantOrderType)
+        )?.id;
+        if (resolvedOrderTypeId == null) {
+          setSubmitError(
+            apiOrderTypes.length === 0
+              ? t("pages.shop.orderTypeNotConfigured") || "Order types are not configured. Please try again later."
+              : t("pages.shop.orderTypeNotFound") || "Order type not found."
+          );
+          return;
+        }
+        const payload: import("@/types/orderApi").CreateOrderRequest = {
+          order_type_id: resolvedOrderTypeId,
+          fabric_type_id: fabricTypeIdFromApi,
+          fabric_source: backendFabricSource,
+          notes: notes || (fabricSource === "customer" ? customerNotes : fabricSource === "not_sure" ? notSureInquiry : "") || undefined,
+        };
+        if (useBackendUpload) {
+          payload.custom_design = uploadedFiles[0];
+        } else if (useBackendExisting) {
+          payload.design_id = designIdFromApi;
+        }
+        if (backendFabricSource === "factory_provide") {
+          payload.fabric_inventory_id = factoryFabricIdNum;
+          payload.quantity = quantity;
+        }
+        const created = await orderApi.createOrder(payload);
+        if (paymentMethod === "instapay" && paymentProofFile) {
+          try {
+            await orderApi.createPayment(created.id, "instant_pay", paymentProofFile);
+          } catch (paymentErr) {
+            setSubmitError(
+              (paymentErr && typeof (paymentErr as { message?: string }).message === "string"
+                ? (paymentErr as { message: string }).message
+                : t("pages.shop.submitError")) + " (Order was created.)"
+            );
+            return;
+          }
+        }
+        navigate(`/orders/${created.id}`);
+        return;
+      }
+
       const order = ordersApi.createOrder({
         userId: user.id,
         customerType: user.customerType,
@@ -261,7 +484,13 @@ const Shop = () => {
       });
       navigate(`/orders/${order.id}`);
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : t("pages.shop.submitError"));
+      const msg =
+        e && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string"
+          ? (e as { message: string }).message
+          : e instanceof Error
+            ? e.message
+            : t("pages.shop.submitError");
+      setSubmitError(msg);
     }
   };
 
@@ -945,12 +1174,9 @@ const Shop = () => {
                           }`}
                         >
                           <div className="flex gap-3">
-                            <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
+                            <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100">
                               <img 
-                                src={fabric.type === "sublimation"
-                                  ? downloadFabric
-                                  : beautyOfCulture
-                                }
+                                src={fabric.imageUrl ?? (fabric.type === "sublimation" ? downloadFabric : beautyOfCulture)}
                                 alt={fabric.name}
                                 className="w-full h-full object-cover"
                               />
@@ -1086,6 +1312,22 @@ const Shop = () => {
                       <span className="text-muted-foreground font-medium">{t("pages.shop.designSource")}</span>
                       <span className="font-bold text-primary capitalize px-4 py-2 bg-blue-50 rounded-lg">{designChoice.source}</span>
                     </div>
+                    <div className="flex justify-between items-center pb-4 border-b border-gray-200">
+                      <span className="text-muted-foreground font-medium">{t("pages.shop.fabricSource")}</span>
+                      <span className="font-bold text-primary px-4 py-2 bg-slate-100 rounded-lg">
+                        {fabricChoice.fabricSource === "factory"
+                          ? t("pages.shop.factoryProvides")
+                          : fabricChoice.fabricSource === "customer"
+                            ? t("pages.shop.iProvide")
+                            : t("pages.shop.notSure")}
+                      </span>
+                    </div>
+                    {fabricChoice.fabricSource === "factory" && selectedFactoryFabric && (
+                      <div className="flex justify-between items-center pb-4 border-b border-gray-200">
+                        <span className="text-muted-foreground font-medium">{t("pages.shop.fabricName")}</span>
+                        <span className="font-bold text-primary px-4 py-2 bg-slate-100 rounded-lg">{selectedFactoryFabric.name}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center pb-4 border-b border-gray-200">
                       <span className="text-muted-foreground font-medium">{t("pages.shop.fabricTypeLabel")}</span>
                       <span className="font-bold text-primary capitalize px-4 py-2 bg-purple-50 rounded-lg">{fabricChoice.fabricType}</span>

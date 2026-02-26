@@ -38,7 +38,12 @@ import { ordersApi } from "@/api/orders";
 import { productionApi } from "@/api/production";
 import { authApi } from "@/api/auth";
 import { userDesignsApi } from "@/api/userDesigns";
+import { adminAuthApi } from "@/api/adminAuth";
+import { adminOrderApi } from "@/api/adminOrderApi";
+import { adminProductionApi } from "@/api/adminProductionApi";
+import { adminOrderToOrder } from "@/utils/adminOrderMapper";
 import type { Order as ApiOrder, OrderStatus as ApiOrderStatus } from "@/types/order";
+import type { BackendOrderStatus } from "@/types/orderApi";
 
 type DisplayStatus = "Pending" | "In Progress" | "Done" | "Cancelled";
 
@@ -103,6 +108,16 @@ const orderTypeCategoryOptions: { label: string; value: OrderTypeCategoryFilter 
   { label: "Order", value: "Order" },
 ];
 
+function getOrderCustomer(order: ApiOrder) {
+  if (order.user_info) {
+    const ui = order.user_info;
+    const name = [ui.fullname, ui.email, ui.phone].map((s) => (s ?? "").trim()).find(Boolean) || "Customer";
+    return { name, email: ui.email ?? "" };
+  }
+  const u = authApi.getUserById(order.userId);
+  return { name: u?.name ?? order.userId, email: u?.email ?? "" };
+}
+
 const defaultEmailSubject = (orderId: string) => `Quotation for your order ${orderId}`;
 const defaultEmailBody = (customerName: string, orderId: string, quantity: number, quotationAmount: string, validity: string) =>
   `Dear ${customerName},\n\nThank you for your request (Order ${orderId}).\n\nWe are pleased to provide the following quotation:\n\n• Quantity: ${quantity} m\n• Quoted amount: ${quotationAmount} EGP\n• Validity: ${validity}\n\nPlease let us know if you would like to proceed or if you have any questions.\n\nBest regards`;
@@ -141,8 +156,52 @@ const Orders = () => {
   const [addQuantity, setAddQuantity] = useState(1);
   const [addNotes, setAddNotes] = useState("");
   const [addStatus, setAddStatus] = useState<ApiOrderStatus>("SUBMITTED");
+  const [apiOrders, setApiOrders] = useState<ApiOrder[]>([]);
+  const [apiOrdersLoading, setApiOrdersLoading] = useState(false);
+  const [apiOrdersError, setApiOrdersError] = useState<string | null>(null);
+  const [quotationSaveLoading, setQuotationSaveLoading] = useState(false);
+  const [quotationSaveError, setQuotationSaveError] = useState<string | null>(null);
 
-  const allOrders = useMemo(() => ordersApi.getAllOrders(), [refresh]);
+  const adminSession = adminAuthApi.getSession();
+  const isAdminMode = Boolean(adminSession);
+
+  React.useEffect(() => {
+    if (!isAdminMode) {
+      setApiOrders([]);
+      setApiOrdersError(null);
+      return;
+    }
+    let cancelled = false;
+    setApiOrdersLoading(true);
+    setApiOrdersError(null);
+    const statusParam: BackendOrderStatus | undefined =
+      statusFilter === "All" ? undefined : statusFilter === "Pending" ? "pending" : statusFilter === "In Progress" ? "in_progress" : statusFilter === "Done" ? "done" : statusFilter === "Cancelled" ? "cancelled" : undefined;
+    adminOrderApi
+      .list({ status: statusParam, search: searchTerm.trim() || undefined })
+      .then((res) => {
+        if (cancelled) return;
+        const list = (res.results ?? []).map(adminOrderToOrder);
+        setApiOrders(list);
+        setApiOrdersError(null);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setApiOrders([]);
+          setApiOrdersError(err instanceof Error ? err.message : "Failed to load orders");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setApiOrdersLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdminMode, refresh, statusFilter, searchTerm]);
+
+  const allOrders = useMemo(() => {
+    if (isAdminMode) return apiOrders;
+    return ordersApi.getAllOrders();
+  }, [isAdminMode, apiOrders, refresh]);
   const allUsers = useMemo(() => authApi.getAllUsers(), []);
   const presets = useMemo(() => ordersApi.getPresetDesigns(), []);
   const factoryFabricsList = useMemo(() => ordersApi.getFactoryFabrics(), []);
@@ -152,8 +211,8 @@ const Orders = () => {
   const isQuotationRequest = selectedOrder && (selectedOrder.id.startsWith("quot-") || itemForQuotation?.fabricChoice?.fabricSource === "customer" || itemForQuotation?.fabricChoice?.fabricSource === "not_sure");
   React.useEffect(() => {
     if (!selectedOrder || !itemForQuotation || !isQuotationRequest) return;
-    const cust = authApi.getUserById(selectedOrder.userId);
-    const name = cust?.name ?? "Customer";
+    const cust = getOrderCustomer(selectedOrder);
+    const name = cust.name || "Customer";
     const qty = itemForQuotation.quantity;
     setEmailSubject(defaultEmailSubject(selectedOrder.id));
     setEmailBody(defaultEmailBody(name, selectedOrder.id, qty, "—", "7 days"));
@@ -164,8 +223,8 @@ const Orders = () => {
 
   const handleOpenMail = () => {
     if (!selectedOrder || !itemForQuotation) return;
-    const cust = authApi.getUserById(selectedOrder.userId);
-    const to = cust?.email ?? "";
+    const cust = getOrderCustomer(selectedOrder);
+    const to = cust.email ?? "";
     const subj = encodeURIComponent(emailSubject);
     const body = encodeURIComponent(emailBody);
     window.open(`mailto:${to}?subject=${subj}&body=${body}`, "_blank");
@@ -199,8 +258,8 @@ const Orders = () => {
 
   const refreshQuotationTemplates = () => {
     if (!selectedOrder || !itemForQuotation || !isQuotationRequest) return;
-    const cust = authApi.getUserById(selectedOrder.userId);
-    const name = cust?.name ?? "Customer";
+    const cust = getOrderCustomer(selectedOrder);
+    const name = cust.name ?? "Customer";
     const qty = itemForQuotation.quantity;
     const amount = quotationAmount || "—";
     const validity = quotationValidity || "7 days";
@@ -213,9 +272,9 @@ const Orders = () => {
     return allOrders.filter((o) => {
       const displayStatus = mapToDisplayStatus(o.status);
       const matchesStatus = statusFilter === "All" || displayStatus === statusFilter;
-      const customer = authApi.getUserById(o.userId);
-      const name = customer?.name ?? o.userId;
-      const email = customer?.email ?? "";
+      const customer = getOrderCustomer(o);
+      const name = customer.name ?? o.userId;
+      const email = customer.email ?? "";
       const matchesSearch =
         o.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
         name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -252,7 +311,6 @@ const Orders = () => {
   };
 
   const addOrderToProductionSheet = (order: ApiOrder) => {
-    if (productionApi.getRunBySourceOrderId(order.id)) return;
     const item = order.items?.[0];
     if (!item) return;
     const designSource = item.designChoice?.source;
@@ -267,22 +325,62 @@ const Orders = () => {
       : "Customer provides";
     const today = new Date().toISOString().slice(0, 10);
     const machine = productionApi.getMachines()[0] ?? "Default";
-    productionApi.addRun({
+    const payload = {
       date: today,
       machine,
-      customerEntityId: productionApi.getOrCreateWebOrderCustomerEntity(),
       designRef,
       fabric: fabricName,
       metersPrinted: item.quantity ?? 0,
       notes: item.notes ?? "",
       sourceOrderId: order.id,
+    };
+    if (isAdminMode) {
+      (async () => {
+        const { name, email } = getOrderCustomer(order);
+        let customerId: string;
+        try {
+          const list = await adminProductionApi.getCustomers();
+          const normalizedName = (name ?? "").trim().toLowerCase();
+          const normalizedEmail = (email ?? "").trim().toLowerCase();
+          const existing = list.find(
+            (c) =>
+              (c.displayName?.trim().toLowerCase() === normalizedName && normalizedName !== "") ||
+              (normalizedEmail !== "" && c.email?.trim().toLowerCase() === normalizedEmail)
+          );
+          if (existing) {
+            customerId = existing.id;
+          } else {
+            const created = await adminProductionApi.createCustomer({
+              display_name: name?.trim() || email?.trim() || "Customer",
+              email: email?.trim() || undefined,
+              phone: order.user_info?.phone?.trim() || undefined,
+            });
+            customerId = created.id;
+          }
+        } catch {
+          customerId = "1";
+        }
+        adminProductionApi.addRun({ ...payload, customerEntityId: customerId }).catch(() => {});
+      })();
+      return;
+    }
+    if (productionApi.getRunBySourceOrderId(order.id)) return;
+    productionApi.addRun({
+      ...payload,
+      customerEntityId: productionApi.getOrCreateWebOrderCustomerEntity(),
     });
   };
 
   const handleStatusChange = (orderId: string, newStatus: ApiOrderStatus) => {
-    const order = ordersApi.getOrderById(orderId);
-    ordersApi.updateOrderStatus(orderId, newStatus);
-    if (order && (newStatus === "PAID" || newStatus === "IN_PRODUCTION")) {
+    const order = allOrders.find((o) => o.id === orderId);
+    if (!order) return;
+    const isBackendOrder = order.backendId != null;
+    if (!isBackendOrder) {
+      const local = ordersApi.getOrderById(orderId);
+      if (!local) return;
+      ordersApi.updateOrderStatus(orderId, newStatus);
+    }
+    if (newStatus === "PAID" || newStatus === "IN_PRODUCTION") {
       addOrderToProductionSheet({ ...order, status: newStatus, updatedAt: new Date().toISOString() });
     }
     setRefresh((r) => r + 1);
@@ -298,6 +396,7 @@ const Orders = () => {
 
   const confirmDeleteOrder = () => {
     if (!deleteConfirmOrder) return;
+    if (deleteConfirmOrder.backendId != null) return;
     ordersApi.deleteOrder(deleteConfirmOrder.id);
     setRefresh((r) => r + 1);
     setSelectedOrder(null);
@@ -307,6 +406,7 @@ const Orders = () => {
 
   const handleSaveEdit = () => {
     if (!selectedOrder) return;
+    if (selectedOrder.backendId != null) return;
     ordersApi.updateOrder(selectedOrder.id, { status: editStatus, quantity: editQuantity, notes: editNotes });
     if (editStatus === "PAID" || editStatus === "IN_PRODUCTION") {
       const updatedOrder: ApiOrder = {
@@ -335,6 +435,7 @@ const Orders = () => {
 
   const openEdit = () => {
     if (!selectedOrder?.items?.[0]) return;
+    if (selectedOrder.backendId != null) return;
     setEditQuantity(selectedOrder.items[0].quantity);
     setEditNotes(selectedOrder.items[0].notes ?? "");
     setEditStatus(selectedOrder.status);
@@ -370,7 +471,7 @@ const Orders = () => {
   const isQuotation = selectedOrder?.id.startsWith("quot-") ?? false;
   const fabricSource = item?.fabricChoice?.fabricSource;
   const waitsQuotation = fabricSource === "customer" || fabricSource === "not_sure";
-  const customer = selectedOrder ? authApi.getUserById(selectedOrder.userId) : null;
+  const customer = selectedOrder ? getOrderCustomer(selectedOrder) : null;
   const factoryFabric =
     item?.fabricChoice?.factoryFabricId != null
       ? ordersApi.getFactoryFabricById(item.fabricChoice.factoryFabricId)
@@ -459,7 +560,17 @@ const Orders = () => {
           </div>
         </div>
 
+        {isAdminMode && apiOrdersError && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+            {apiOrdersError}
+          </div>
+        )}
         <div className="bg-white rounded-[45px] border border-slate-100 shadow-sm overflow-hidden min-h-[400px]">
+          {isAdminMode && apiOrdersLoading && (
+            <div className="flex items-center justify-center py-16 text-slate-500 font-medium">Loading orders…</div>
+          )}
+          {!apiOrdersLoading && (
+          <>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -475,7 +586,7 @@ const Orders = () => {
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {filteredOrders.map((order) => {
-                  const cust = authApi.getUserById(order.userId);
+                  const cust = getOrderCustomer(order);
                   const displayStatus = mapToDisplayStatus(order.status);
                   const firstItem = order.items[0];
                   const orderType = firstItem?.fabricChoice?.orderType ?? "order";
@@ -553,6 +664,8 @@ const Orders = () => {
               <p className="text-xs font-black uppercase tracking-widest">No orders match the filter</p>
             </div>
           )}
+          </>
+          )}
         </div>
       </div>
 
@@ -586,12 +699,16 @@ const Orders = () => {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {selectedOrder.backendId == null && (
+                      <>
                     <button type="button" onClick={openEdit} className="p-2 hover:bg-slate-100 rounded-full text-slate-600" title="Edit order">
                       <Pencil size={20} />
                     </button>
                     <button type="button" onClick={handleDeleteOrder} className="p-2 hover:bg-red-50 rounded-full text-red-500" title="Delete order">
                       <Trash2 size={20} />
                     </button>
+                      </>
+                    )}
                     <button onClick={() => setIsDetailOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400">
                       <X size={24} />
                     </button>
@@ -954,6 +1071,36 @@ const Orders = () => {
                       <button type="button" onClick={refreshQuotationTemplates} className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">
                         Refresh template with amount & validity
                       </button>
+                      {selectedOrder?.backendId != null && (
+                        <>
+                          <button
+                            type="button"
+                            disabled={quotationSaveLoading || !quotationAmount?.trim()}
+                            onClick={async () => {
+                              if (!selectedOrder?.backendId || !itemForQuotation) return;
+                              setQuotationSaveError(null);
+                              setQuotationSaveLoading(true);
+                              try {
+                                await adminOrderApi.addQuotation(selectedOrder.backendId, {
+                                  title: `Quotation for ${selectedOrder.id}`,
+                                  description: `Validity: ${quotationValidity || "7 days"}. ${quotationAmount ? `Amount: ${quotationAmount} EGP.` : ""}`,
+                                  min_quantity: itemForQuotation.quantity,
+                                  price: quotationAmount.trim() || "0",
+                                });
+                                setRefresh((r) => r + 1);
+                              } catch (e) {
+                                setQuotationSaveError(e instanceof Error ? e.message : "Failed to save quotation");
+                              } finally {
+                                setQuotationSaveLoading(false);
+                              }
+                            }}
+                            className="px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50"
+                          >
+                            {quotationSaveLoading ? "Saving…" : "Save quotation to server"}
+                          </button>
+                          {quotationSaveError && <p className="text-xs text-red-600 font-medium">{quotationSaveError}</p>}
+                        </>
+                      )}
                     </div>
                   </section>
                 )}

@@ -323,19 +323,26 @@ export const productionApi = {
     saveRuns([]);
   },
 
-  /** Bulk-approve selected runs for billing */
+  /** Bulk-approve selected runs for billing. Linked orders (sourceOrderId) are set to Done so they flow to Billing Vault. */
   approveRuns(ids: string[]): number {
     const runs = getRuns();
     let count = 0;
     const now = new Date().toISOString();
+    const orderIdsToComplete: string[] = [];
     for (const run of runs) {
       if (ids.includes(run.id) && run.billingStatus === "DRAFT") {
         run.billingStatus = "APPROVED";
         run.updatedAt = now;
         count++;
+        if (run.sourceOrderId) orderIdsToComplete.push(run.sourceOrderId);
       }
     }
     saveRuns(runs);
+    orderIdsToComplete.forEach((orderId) => {
+      if (ordersApi.getOrderById(orderId)) {
+        ordersApi.updateOrderStatus(orderId, "COMPLETED");
+      }
+    });
     return count;
   },
 
