@@ -3,10 +3,8 @@
  * Base URL: config.urls mounts accounts at api/, order at api/order/, etc.
  */
 
-/** Production backend. Override with VITE_API_BASE_URL for local dev (e.g. http://localhost:8000). */
-export const API_BASE_URL =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ||
-  "https://dtx-printing.flokisystems.com";
+/** Production backend. For production builds do not set VITE_API_BASE_URL. For local dev only, set it in .env (see docs). */
+export const API_BASE_URL = "https://dtx-printing.flokisystems.com";
 
 /** Auth (accounts app) — prefix /api/ */
 export const AUTH_PATHS = {
@@ -23,8 +21,10 @@ export const AUTH_PATHS = {
 /** Orders (order app) — prefix /api/order/ */
 export const ORDER_PATHS = {
   listCreate: "/api/order/add/",
-  detail: (orderId: string) => `/api/order/details/${encodeURIComponent(orderId)}/`,
-  payment: (orderId: string) => `/api/order/payment/${encodeURIComponent(orderId)}/`,
+  detail: (orderId: string) =>
+    `/api/order/details/${encodeURIComponent(orderId)}/`,
+  payment: (orderId: string) =>
+    `/api/order/payment/${encodeURIComponent(orderId)}/`,
   fabricInventory: "/api/order/fabric-inventory/",
   designs: "/api/order/designs/",
   fabricTypes: "/api/order/fabric-types/",

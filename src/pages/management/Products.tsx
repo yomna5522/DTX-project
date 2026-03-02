@@ -172,6 +172,8 @@ const Products = () => {
     return Math.min(...capacities);
   };
 
+  const stockBlockedCount = products.filter(p => calculateCapacity(p) === 0).length;
+
   const filteredProducts = products.filter(p => {
     const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           p.description.toLowerCase().includes(searchTerm.toLowerCase());
@@ -252,7 +254,7 @@ const Products = () => {
            </button>
         </div>
 
-        {/* Global Capacity Stats */}
+        {/* Global Capacity Stats — from products and capacity calculation */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
            <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex items-center gap-6 overflow-hidden relative group">
               <div className="absolute top-0 right-0 p-8 opacity-5 -rotate-12 group-hover:rotate-0 transition-transform duration-500">
@@ -262,8 +264,8 @@ const Products = () => {
                  <Cpu size={32} />
               </div>
               <div>
-                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Max Factory Capacity</p>
-                 <p className="text-3xl font-black text-slate-900 tracking-tight">24,500 <span className="text-sm">m²</span></p>
+                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Product Lines</p>
+                 <p className="text-3xl font-black text-slate-900 tracking-tight">{products.length}</p>
               </div>
            </div>
            <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex items-center gap-6 overflow-hidden relative group">
@@ -287,7 +289,7 @@ const Products = () => {
               </div>
               <div>
                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Stock Blockers</p>
-                 <p className="text-3xl font-black text-red-600 tracking-tight">2 <span className="text-sm">Sub-cats</span></p>
+                 <p className="text-3xl font-black text-red-600 tracking-tight">{stockBlockedCount} <span className="text-sm">product{stockBlockedCount !== 1 ? "s" : ""}</span></p>
               </div>
            </div>
         </div>

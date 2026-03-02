@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Lock, User, ShieldCheck, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { adminAuthApi } from "@/api/adminAuth";
@@ -11,6 +11,12 @@ const ManagementLogin = () => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (adminAuthApi.getSession()) {
+      navigate("/management", { replace: true });
+    }
+  }, [navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

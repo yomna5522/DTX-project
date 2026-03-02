@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import AdminProtectedRoute from "@/components/AdminProtectedRoute";
 import { useDirection } from "@/hooks/useDirection";
 import Index from "./pages/Index";
 import About from "./pages/About";
@@ -70,22 +71,22 @@ const App = () => {
             <Route path="/orders/:orderId" element={<ProtectedRoute><OrderDetail /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><UserSettings /></ProtectedRoute>} />
 
-            {/* Management System Routes */}
+            {/* Management System Routes — require admin login */}
             <Route path="/management/login" element={<ManagementLogin />} />
-            <Route path="/management" element={<Dashboard />} />
-            <Route path="/management/customers" element={<Customers />} />
-            <Route path="/management/suppliers" element={<Suppliers />} />
-            <Route path="/management/products" element={<Products />} />
-            <Route path="/management/expenses" element={<Expenses />} />
-            <Route path="/management/orders" element={<ManagementOrders />} />
-            <Route path="/management/orders/tracking" element={<OrderTracking />} />
-            <Route path="/management/fabric-inventory" element={<FabricInventory />} />
-            <Route path="/management/design-library" element={<DesignLibrary />} />
-            <Route path="/management/production" element={<ProductionForge />} />
-            <Route path="/management/production/templates" element={<ProductionTemplates />} />
-            <Route path="/management/invoices" element={<Invoices />} />
-            <Route path="/management/import" element={<ImportWizard />} />
-            <Route path="/management/settings" element={<ControlCenter />} />
+            <Route path="/management" element={<AdminProtectedRoute><Dashboard /></AdminProtectedRoute>} />
+            <Route path="/management/customers" element={<AdminProtectedRoute><Customers /></AdminProtectedRoute>} />
+            <Route path="/management/suppliers" element={<AdminProtectedRoute><Suppliers /></AdminProtectedRoute>} />
+            <Route path="/management/products" element={<AdminProtectedRoute><Products /></AdminProtectedRoute>} />
+            <Route path="/management/expenses" element={<AdminProtectedRoute><Expenses /></AdminProtectedRoute>} />
+            <Route path="/management/orders" element={<AdminProtectedRoute><ManagementOrders /></AdminProtectedRoute>} />
+            <Route path="/management/orders/tracking" element={<AdminProtectedRoute><OrderTracking /></AdminProtectedRoute>} />
+            <Route path="/management/fabric-inventory" element={<AdminProtectedRoute><FabricInventory /></AdminProtectedRoute>} />
+            <Route path="/management/design-library" element={<AdminProtectedRoute><DesignLibrary /></AdminProtectedRoute>} />
+            <Route path="/management/production" element={<AdminProtectedRoute><ProductionForge /></AdminProtectedRoute>} />
+            <Route path="/management/production/templates" element={<AdminProtectedRoute><ProductionTemplates /></AdminProtectedRoute>} />
+            <Route path="/management/invoices" element={<AdminProtectedRoute><Invoices /></AdminProtectedRoute>} />
+            <Route path="/management/import" element={<AdminProtectedRoute><ImportWizard /></AdminProtectedRoute>} />
+            <Route path="/management/settings" element={<AdminProtectedRoute><ControlCenter /></AdminProtectedRoute>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>

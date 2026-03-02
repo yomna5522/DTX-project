@@ -220,6 +220,7 @@ const Inventory = () => {
   });
 
   const lowStockCount = materials.filter(m => m.currentStock <= m.alertThreshold).length;
+  const stockValue = materials.reduce((sum, m) => sum + (m.currentStock ?? 0) * (m.pricePerUnit ?? 0), 0);
 
   return (
     <ManagementLayout>
@@ -297,7 +298,7 @@ const Inventory = () => {
                 <BarChart3 size={24} />
               </div>
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Stock Value</p>
-              <p className="text-2xl font-black text-slate-900">450K <span className="text-xs">EGP</span></p>
+              <p className="text-2xl font-black text-slate-900">{stockValue >= 1e6 ? `${(stockValue / 1e6).toFixed(1)}M` : stockValue >= 1e3 ? `${(stockValue / 1e3).toFixed(0)}K` : Math.round(stockValue)} <span className="text-xs">EGP</span></p>
            </div>
 
            <div className="bg-white p-6 rounded-[35px] border border-slate-100 shadow-sm cursor-pointer hover:bg-slate-900 group transition-all" onClick={() => setIsCategoryMgmtOpen(true)}>

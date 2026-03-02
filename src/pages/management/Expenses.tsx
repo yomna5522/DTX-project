@@ -411,6 +411,37 @@ const Expenses = () => {
           </div>
         </div>
 
+        {/* Stat cards — from loaded expenses and categories */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center gap-5">
+            <div className="w-14 h-14 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center">
+              <TrendingDown size={28} />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Total Spent</p>
+              <p className="text-2xl font-black text-slate-900">{totalExpenses.toLocaleString()} <span className="text-xs">EGP</span></p>
+            </div>
+          </div>
+          <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center gap-5">
+            <div className="w-14 h-14 bg-blue-50 text-primary rounded-2xl flex items-center justify-center">
+              <Layers size={28} />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Categories</p>
+              <p className="text-2xl font-black text-slate-900">{categories.length}</p>
+            </div>
+          </div>
+          <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center gap-5">
+            <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center">
+              <PieChart size={28} />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Expense Entries</p>
+              <p className="text-2xl font-black text-slate-900">{expenses.length}</p>
+            </div>
+          </div>
+        </div>
+
         {/* Categories */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
           {categories.map((cat) => {

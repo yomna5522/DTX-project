@@ -1,29 +1,29 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import ManagementLayout from "@/components/management/ManagementLayout";
-import { 
-  Users, 
-  ShoppingBag, 
-  TrendingUp, 
-  Package, 
-  Clock, 
-  MoreVertical,
+import { adminOrderApi } from "@/api/adminOrderApi";
+import { adminCustomersApi } from "@/api/adminCustomersApi";
+import type { AdminOrderResponse } from "@/types/orderApi";
+import type { BackendOrderStatus } from "@/types/orderApi";
+import {
+  Users,
+  ShoppingBag,
+  Package,
+  Clock,
   ArrowUpRight,
   ArrowDownLeft,
   DollarSign,
-  Activity,
   Plus,
   FileBarChart,
-  Search,
-  Filter,
   CheckCircle2,
   Truck,
   AlertCircle,
-  X,
   MapPin,
   Calendar,
   ChevronRight,
-  Box
+  Box,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -34,11 +34,9 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  BarChart,
-  Bar,
   PieChart,
   Pie,
-  Cell
+  Cell,
 } from "recharts";
 import {
   Sheet,
@@ -47,26 +45,8 @@ import {
   SheetTitle,
   SheetDescription,
   SheetFooter,
-  SheetClose
+  SheetClose,
 } from "@/components/ui/sheet";
-
-// --- Mock Data for Charts ---
-const revenueData = [
-  { name: "Mon", value: 4000 },
-  { name: "Tue", value: 3000 },
-  { name: "Wed", value: 5000 },
-  { name: "Thu", value: 2780 },
-  { name: "Fri", value: 1890 },
-  { name: "Sat", value: 2390 },
-  { name: "Sun", value: 3490 },
-];
-
-const orderStatusData = [
-  { name: "Completed", value: 400, color: "#10b981" }, // emerald-500
-  { name: "In Production", value: 300, color: "#3b82f6" }, // blue-500
-  { name: "Pending", value: 300, color: "#f59e0b" }, // amber-500
-  { name: "Issues", value: 100, color: "#ef4444" }, // red-500
-];
 
 // --- Types ---
 interface TrackingStep {
@@ -76,144 +56,224 @@ interface TrackingStep {
   location: string;
   description: string;
   completed: boolean;
-  icon: any;
+  icon: React.ComponentType<{ size?: number }>;
 }
 
-interface Order {
+interface DashboardOrder {
   id: string;
   customer: string;
   product: string;
   date: string;
-  status: "Pending" | "In Production" | "Quality Check" | "Ready" | "Completed" | "Shipped";
+  status: string;
+  displayStatus: string;
   amount: string;
-  progress: number; // 0 to 100
+  progress: number;
   trackingHistory: TrackingStep[];
 }
 
-const mockTrackingHistory: TrackingStep[] = [
-  { date: "Feb 12", time: "10:30 AM", status: "Order Placed", location: "Cairo Branch", description: "Order received and confirmed via Web Portal.", completed: true, icon: CheckCircle2 },
-  { date: "Feb 12", time: "12:15 PM", status: "Material Allocated", location: "Warehouse A", description: "Fabrics and inks reserved for production.", completed: true, icon: Box },
-  { date: "Feb 12", time: "02:00 PM", status: "In Production", location: "Factory Floor 1", description: "Printing process started on Machine #4.", completed: true, icon: ShoppingBag },
-  { date: "Feb 13", time: "09:00 AM", status: "Quality Check", location: "Quality Control Lab", description: "Final inspection for color accuracy.", completed: false, icon: CheckCircle2 },
-  { date: "Feb 13", time: "02:00 PM", status: "Ready for Pickup", location: "Dispatch Center", description: "Order packaged and ready for courier.", completed: false, icon: Package },
-];
+const TRACKING_ICONS = { CheckCircle2, Box, ShoppingBag, Package };
 
-const initialOrders: Order[] = [
-  { 
-    id: "#ORD-9901", 
-    customer: "Mohamed Ali", 
-    product: "Premium Business Cards", 
-    date: "Today, 10:30 AM", 
-    status: "In Production", 
-    amount: "4,500 EGP", 
-    progress: 45,
-    trackingHistory: mockTrackingHistory 
-  },
-  { 
-    id: "#ORD-9900", 
-    customer: "Sarah Cairo", 
-    product: "Vinyl Banners (x5)", 
-    date: "Today, 09:15 AM", 
-    status: "Pending", 
-    amount: "1,200 EGP", 
-    progress: 10,
-    trackingHistory: [mockTrackingHistory[0]]
-  },
-  { 
-    id: "#ORD-9899", 
-    customer: "Corporate Inc.", 
-    product: "Letterheads & Envelopes", 
-    date: "Yesterday, 04:45 PM", 
-    status: "Completed", 
-    amount: "12,500 EGP", 
-    progress: 100,
-    trackingHistory: mockTrackingHistory.map(s => ({...s, completed: true}))
-  },
-  { 
-    id: "#ORD-9898", 
-    customer: "Amr Diab", 
-    product: "Concert Posters", 
-    date: "Yesterday, 02:20 PM", 
-    status: "Shipped", 
-    amount: "850 EGP", 
-    progress: 100,
-    trackingHistory: mockTrackingHistory
-  },
-  { 
-    id: "#ORD-9897", 
-    customer: "Nile Text", 
-    product: "Staff Uniforms", 
-    date: "Feb 10, 11:00 AM", 
-    status: "Quality Check", 
-    amount: "3,200 EGP", 
-    progress: 80,
-    trackingHistory: mockTrackingHistory.slice(0, 4)
-  },
-];
+function statusToProgress(s: BackendOrderStatus): number {
+  switch (s) {
+    case "pending":
+      return 10;
+    case "in_progress":
+      return 50;
+    case "done":
+    case "paid":
+      return 100;
+    case "cancelled":
+      return 0;
+    default:
+      return 10;
+  }
+}
+
+function statusToDisplay(s: BackendOrderStatus): string {
+  switch (s) {
+    case "pending":
+      return "Pending";
+    case "in_progress":
+      return "In Production";
+    case "done":
+      return "Completed";
+    case "paid":
+      return "Paid";
+    case "cancelled":
+      return "Cancelled";
+    default:
+      return s;
+  }
+}
+
+function formatOrderDate(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const today = now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === today) return `Today, ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+  if (d.toDateString() === yesterday.toDateString()) return `Yesterday, ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function buildTrackingSteps(order: AdminOrderResponse): TrackingStep[] {
+  const steps: { status: BackendOrderStatus; label: string; icon: keyof typeof TRACKING_ICONS }[] = [
+    { status: "pending", label: "Order Placed", icon: "CheckCircle2" },
+    { status: "in_progress", label: "In Production", icon: "ShoppingBag" },
+    { status: "done", label: "Completed", icon: "CheckCircle2" },
+    { status: "paid", label: "Paid", icon: "Package" },
+  ];
+  const orderStatus = order.status;
+  const statusOrder: BackendOrderStatus[] = ["pending", "in_progress", "done", "paid"];
+  const currentIdx = statusOrder.indexOf(orderStatus);
+  return steps.map((s, i) => {
+    const idx = statusOrder.indexOf(s.status);
+    const completed = orderStatus === "cancelled" ? false : idx <= currentIdx;
+    return {
+      date: new Date(order.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      time: new Date(order.updated_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+      status: s.label,
+      location: "—",
+      description: `${s.label}.`,
+      completed,
+      icon: TRACKING_ICONS[s.icon],
+    };
+  });
+}
+
+function adminOrderToDashboardOrder(r: AdminOrderResponse): DashboardOrder {
+  const amount = r.total_amount != null ? `${Number(r.total_amount).toLocaleString("en-US")} EGP` : "—";
+  return {
+    id: r.order_id,
+    customer: r.user_info?.fullname || r.user_info?.email || "—",
+    product: r.order_type_name || "Order",
+    date: formatOrderDate(r.created_at),
+    status: r.status,
+    displayStatus: statusToDisplay(r.status),
+    amount,
+    progress: statusToProgress(r.status),
+    trackingHistory: buildTrackingSteps(r),
+  };
+}
+
+const PIE_COLORS: Record<string, string> = {
+  pending: "#f59e0b",
+  in_progress: "#3b82f6",
+  done: "#10b981",
+  paid: "#10b981",
+  cancelled: "#ef4444",
+};
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const [orders, setOrders] = useState<Order[]>(initialOrders);
   const [showReports, setShowReports] = useState(false);
-  const [isAddOrderOpen, setIsAddOrderOpen] = useState(false);
-  
-  // Tracking State
-  const [selectedOrderForTracking, setSelectedOrderForTracking] = useState<Order | null>(null);
+  const [selectedOrderForTracking, setSelectedOrderForTracking] = useState<DashboardOrder | null>(null);
   const [isTrackingSheetOpen, setIsTrackingSheetOpen] = useState(false);
 
-  // New Order Form State
-  const [newOrder, setNewOrder] = useState({
-    customer: "",
-    product: "",
-    amount: "",
-    status: "Pending" as Order["status"]
+  const { data: ordersData, isLoading: ordersLoading, error: ordersError } = useQuery({
+    queryKey: ["admin", "orders", "list"],
+    queryFn: () => adminOrderApi.list({}),
   });
 
-  const handleAddOrder = () => {
-    if (!newOrder.customer || !newOrder.product || !newOrder.amount) return;
+  const { data: customers, isLoading: customersLoading } = useQuery({
+    queryKey: ["admin", "customers"],
+    queryFn: () => adminCustomersApi.getCustomers(),
+  });
 
-    const order: Order = {
-      id: `#ORD-${Math.floor(Math.random() * 9000) + 1000}`,
-      customer: newOrder.customer,
-      product: newOrder.product,
-      date: "Just now",
-      status: newOrder.status,
-      amount: `${newOrder.amount} EGP`,
-      progress: newOrder.status === "Pending" ? 10 : newOrder.status === "In Production" ? 40 : 100,
-      trackingHistory: [mockTrackingHistory[0]]
+  const orders: DashboardOrder[] = useMemo(() => {
+    if (!ordersData?.results) return [];
+    return ordersData.results.map(adminOrderToDashboardOrder);
+  }, [ordersData?.results]);
+
+  const revenueFromOrders = useMemo(() => {
+    if (!ordersData?.results) return 0;
+    return ordersData.results.reduce((sum, o) => sum + (o.total_amount != null ? Number(o.total_amount) : 0), 0);
+  }, [ordersData?.results]);
+
+  const orderCountByStatus = useMemo(() => {
+    const map: Record<string, number> = {};
+    orders.forEach((o) => {
+      map[o.status] = (map[o.status] ?? 0) + 1;
+    });
+    return map;
+  }, [orders]);
+
+  const orderStatusData = useMemo(() => {
+    const labels: Record<string, string> = {
+      pending: "Pending",
+      in_progress: "In Production",
+      done: "Completed",
+      paid: "Paid",
+      cancelled: "Cancelled",
     };
+    return Object.entries(orderCountByStatus)
+      .filter(([, v]) => v > 0)
+      .map(([k, value]) => ({ name: labels[k] ?? k, value, color: PIE_COLORS[k] ?? "#94a3b8" }));
+  }, [orderCountByStatus]);
 
-    setOrders([order, ...orders]);
-    setIsAddOrderOpen(false);
-    setNewOrder({ customer: "", product: "", amount: "", status: "Pending" });
-  };
+  const revenueData = useMemo(() => {
+    const byDay: Record<string, number> = {};
+    ordersData?.results?.forEach((o) => {
+      const day = new Date(o.created_at).toLocaleDateString("en-US", { weekday: "short" });
+      const amt = o.total_amount != null ? Number(o.total_amount) : 0;
+      byDay[day] = (byDay[day] ?? 0) + amt;
+    });
+    const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    return days.map((name) => ({ name, value: Math.round(byDay[name] ?? 0) }));
+  }, [ordersData?.results]);
 
-  const handleViewTracking = (order: Order) => {
+  const totalOrders = ordersData?.count ?? 0;
+  const activeOrders = orders.filter((o) => o.status === "pending" || o.status === "in_progress").length;
+  const pendingCount = orderCountByStatus.pending ?? 0;
+  const customerCount = customers?.length ?? 0;
+
+  const stats = [
+    { label: "Total Revenue (from list)", value: `${revenueFromOrders.toLocaleString("en-US")} EGP`, change: "from orders", trend: "up" as const, icon: DollarSign, color: "bg-emerald-50 text-emerald-600" },
+    { label: "Active Orders", value: String(activeOrders), change: `of ${totalOrders} total`, trend: "up" as const, icon: ShoppingBag, color: "bg-blue-50 text-blue-600" },
+    { label: "Pending Production", value: String(pendingCount), change: "awaiting start", trend: "down" as const, icon: Clock, color: "bg-amber-50 text-amber-600" },
+    { label: "Total Customers", value: String(customerCount), change: "registered", trend: "up" as const, icon: Users, color: "bg-purple-50 text-purple-600" },
+  ];
+
+  const handleViewTracking = (order: DashboardOrder) => {
     setSelectedOrderForTracking(order);
     setIsTrackingSheetOpen(true);
   };
 
-  const stats = [
-    { label: "Total Revenue", value: "284,500 EGP", change: "+12.5%", trend: "up", icon: DollarSign, color: "bg-emerald-50 text-emerald-600" },
-    { label: "Active Orders", value: orders.filter(o => o.status !== "Completed" && o.status !== "Shipped").length.toString(), change: "+5 today", trend: "up", icon: ShoppingBag, color: "bg-blue-50 text-blue-600" },
-    { label: "Pending Production", value: orders.filter(o => o.status === "Pending").length.toString(), change: "-2 from yesterday", trend: "down", icon: Clock, color: "bg-amber-50 text-amber-600" },
-    { label: "Total Customers", value: "1,240", change: "+8 this week", trend: "up", icon: Users, color: "bg-purple-50 text-purple-600" },
-  ];
-
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "Completed": return "bg-emerald-50 text-emerald-600 border-emerald-100";
-      case "Shipped": return "bg-slate-100 text-slate-600 border-slate-200";
-      case "In Production": return "bg-blue-50 text-blue-600 border-blue-100";
-      case "Quality Check": return "bg-purple-50 text-purple-600 border-purple-100";
-      case "Ready": return "bg-indigo-50 text-indigo-600 border-indigo-100";
-      default: return "bg-amber-50 text-amber-600 border-amber-100";
+      case "done":
+      case "paid":
+        return "bg-emerald-50 text-emerald-600 border-emerald-100";
+      case "in_progress":
+        return "bg-blue-50 text-blue-600 border-blue-100";
+      case "cancelled":
+        return "bg-red-50 text-red-600 border-red-100";
+      default:
+        return "bg-amber-50 text-amber-600 border-amber-100";
     }
   };
+
+  const isLoading = ordersLoading || customersLoading;
+  const hasError = ordersError != null;
 
   return (
     <ManagementLayout>
       <div className="space-y-8 animate-fade-in-up pb-10">
+        {isLoading && (
+          <div className="flex items-center justify-center py-16 gap-2 text-slate-500">
+            <Loader2 className="h-6 w-6 animate-spin" />
+            <span className="font-medium">Loading dashboard…</span>
+          </div>
+        )}
+        {hasError && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-800">
+            <p className="font-bold">Failed to load dashboard data.</p>
+            <p className="text-sm mt-1">{ordersError instanceof Error ? ordersError.message : "Please try again."}</p>
+          </div>
+        )}
+        {!isLoading && !hasError && (
+          <>
         {/* Welcome Section */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
            <div>
@@ -221,13 +281,15 @@ const Dashboard = () => {
               <p className="text-slate-500 text-sm font-medium mt-1">Overview of your business performance.</p>
            </div>
            <div className="flex items-center gap-3">
-             <button 
-                onClick={() => setIsAddOrderOpen(true)}
+             <button
+                type="button"
+                onClick={() => navigate("/management/orders")}
                 className="bg-slate-900 text-white px-6 py-3 rounded-xl text-sm font-bold shadow-lg shadow-slate-200 hover:bg-primary transition-all flex items-center gap-2"
               >
                 <Plus size={18} /> New Order
               </button>
-             <button 
+             <button
+                type="button"
                 onClick={() => setShowReports(!showReports)}
                 className={cn(
                   "px-6 py-3 rounded-xl text-sm font-bold border transition-all flex items-center gap-2",
@@ -295,7 +357,7 @@ const Dashboard = () => {
                       </PieChart>
                    </ResponsiveContainer>
                    <div className="absolute inset-0 flex items-center justify-center flex-col pointer-events-none">
-                      <span className="text-3xl font-black text-slate-900">1,100</span>
+                      <span className="text-3xl font-black text-slate-900">{totalOrders}</span>
                       <span className="text-xs font-bold text-slate-400 uppercase">Total Orders</span>
                    </div>
                 </div>
@@ -369,7 +431,7 @@ const Dashboard = () => {
                                   "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wide border",
                                   getStatusColor(order.status)
                                 )}>
-                                   {order.status}
+                                   {order.displayStatus}
                                 </span>
                                 <button 
                                    onClick={() => handleViewTracking(order)}
@@ -443,7 +505,7 @@ const Dashboard = () => {
                                     "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wide border",
                                     getStatusColor(order.status)
                                   )}>
-                                     {order.status}
+                                     {order.displayStatus}
                                   </span>
                                </td>
                                <td className="px-6 py-4 text-sm font-black text-slate-900 text-right">{order.amount}</td>
@@ -457,14 +519,14 @@ const Dashboard = () => {
 
            {/* Quick Actions / Activity */}
            <div className="space-y-6">
-              <div className="bg-slate-900 p-8 rounded-3xl text-white relative overflow-hidden group cursor-pointer" onClick={() => setIsAddOrderOpen(true)}>
+              <div className="bg-slate-900 p-8 rounded-3xl text-white relative overflow-hidden group cursor-pointer" onClick={() => navigate("/management/orders")} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && navigate("/management/orders")}>
                  <div className="relative z-10">
                     <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                        <Plus size={24} />
                     </div>
                     <h3 className="font-black text-xl mb-2">Create New Order</h3>
                     <p className="text-white/60 text-sm mb-6 leading-relaxed">Initate a new production workflow, assign tasks, and track progress instantly.</p>
-                    <button className="w-full py-4 bg-primary text-white rounded-xl font-bold text-sm hover:bg-indigo-600 transition-colors shadow-lg shadow-indigo-900/20">
+                    <button type="button" className="w-full py-4 bg-primary text-white rounded-xl font-bold text-sm hover:bg-indigo-600 transition-colors shadow-lg shadow-indigo-900/20" onClick={() => navigate("/management/orders")}>
                        + Start Workflow
                     </button>
                  </div>
@@ -491,88 +553,6 @@ const Dashboard = () => {
               </div>
            </div>
         </div>
-
-        {/* --- Add Order Sheet --- */}
-        <Sheet open={isAddOrderOpen} onOpenChange={setIsAddOrderOpen}>
-           <SheetContent className="sm:max-w-md bg-white border-l border-slate-100 p-0 flex flex-col">
-              <SheetHeader className="p-6 border-b border-slate-50 bg-slate-50/50">
-                 <SheetTitle className="text-xl font-black text-slate-900 uppercase tracking-tight">New Order</SheetTitle>
-                 <SheetDescription className="text-xs font-medium text-slate-500">Enter order details to start production.</SheetDescription>
-              </SheetHeader>
-              <div className="flex-1 p-6 space-y-6 overflow-y-auto">
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer Name</label>
-                    <div className="relative">
-                       <Users className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                       <input 
-                         type="text" 
-                         className="w-full bg-slate-50 border-none pl-12 pr-4 py-4 rounded-xl text-sm font-bold text-slate-900 placeholder:text-slate-300 outline-none focus:ring-2 focus:ring-primary/10 transition-all"
-                         placeholder="Ex: Mohamed Ali"
-                         value={newOrder.customer}
-                         onChange={(e) => setNewOrder({...newOrder, customer: e.target.value})}
-                       />
-                    </div>
-                 </div>
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Product / Service</label>
-                    <div className="relative">
-                       <Package className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                       <input 
-                         type="text" 
-                         className="w-full bg-slate-50 border-none pl-12 pr-4 py-4 rounded-xl text-sm font-bold text-slate-900 placeholder:text-slate-300 outline-none focus:ring-2 focus:ring-primary/10 transition-all"
-                         placeholder="Ex: Business Cards (x1000)"
-                         value={newOrder.product}
-                         onChange={(e) => setNewOrder({...newOrder, product: e.target.value})}
-                       />
-                    </div>
-                 </div>
-                 <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Amount (EGP)</label>
-                       <div className="relative">
-                          <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                          <input 
-                            type="number" 
-                            className="w-full bg-slate-50 border-none pl-12 pr-4 py-4 rounded-xl text-sm font-bold text-slate-900 placeholder:text-slate-300 outline-none focus:ring-2 focus:ring-primary/10 transition-all"
-                            placeholder="0.00"
-                            value={newOrder.amount}
-                            onChange={(e) => setNewOrder({...newOrder, amount: e.target.value})}
-                          />
-                       </div>
-                    </div>
-                    <div className="space-y-2">
-                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</label>
-                       <select 
-                          className="w-full bg-slate-50 border-none px-4 py-4 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-primary/10 transition-all cursor-pointer appearance-none"
-                          value={newOrder.status}
-                          onChange={(e) => setNewOrder({...newOrder, status: e.target.value as any})}
-                       >
-                          <option value="Pending">Pending</option>
-                          <option value="In Production">In Production</option>
-                          <option value="Quality Check">Quality Check</option>
-                          <option value="Ready">Ready</option>
-                          <option value="Completed">Completed</option>
-                       </select>
-                    </div>
-                 </div>
-              </div>
-              <SheetFooter className="p-6 border-t border-slate-50 bg-slate-50/50">
-                 <div className="flex gap-4 w-full">
-                    <SheetClose asChild>
-                       <button className="flex-1 py-4 rounded-xl font-bold text-xs uppercase tracking-widest bg-white border border-slate-200 text-slate-500 hover:bg-slate-100 transition-colors">
-                          Cancel
-                       </button>
-                    </SheetClose>
-                    <button 
-                       onClick={handleAddOrder}
-                       className="flex-1 py-4 rounded-xl font-bold text-xs uppercase tracking-widest bg-slate-900 text-white shadow-lg hover:bg-primary transition-colors"
-                    >
-                       Create Order
-                    </button>
-                 </div>
-              </SheetFooter>
-           </SheetContent>
-        </Sheet>
 
         {/* --- Track Delivery Sheet --- */}
         <Sheet open={isTrackingSheetOpen} onOpenChange={setIsTrackingSheetOpen}>
@@ -639,6 +619,8 @@ const Dashboard = () => {
               )}
            </SheetContent>
         </Sheet>
+          </>
+        )}
       </div>
 
       <style>{`

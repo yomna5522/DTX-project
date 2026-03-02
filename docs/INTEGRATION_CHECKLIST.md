@@ -8,7 +8,7 @@ Use this checklist for manual end-to-end verification before release.
 
 
 - **Frontend**: `npm run dev`
-- **Env** (optional): Set `VITE_API_BASE_URL=http://localhost:8000` in `.env` if your backend runs elsewhere.
+- **Env**: For **production** do not set `VITE_API_BASE_URL` (app uses https://dtx-printing.flokisystems.com). For **local dev** only, set `VITE_API_BASE_URL` in `.env` to your local backend URL.
 
 ---
 
